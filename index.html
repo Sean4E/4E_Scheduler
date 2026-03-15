@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<!--
+╔══════════════════════════════════════════════════════════════════╗
+║  4E WORKSHOP SCHEDULER — FIREBASE EDITION                        ║
+║  Hosted on GitHub Pages · Data in Firestore · PIN admin auth     ║
+╠══════════════════════════════════════════════════════════════════╣
+║  SETUP INSTRUCTIONS                                              ║
+║  ─────────────────────────────────────────────────────────────── ║
+║  1. Go to https://console.firebase.google.com                    ║
+║     → Create project → Enable Firestore (Production mode)       ║
+║     (No Authentication product needed — admin uses PIN only)     ║
+║                                                                  ║
+║  2. Firestore → Rules → paste:                                   ║
+║                                                                  ║
+║  rules_version = '2';                                            ║
+║  service cloud.firestore {                                       ║
+║    match /databases/{database}/documents {                       ║
+║      match /config/{doc} {                                       ║
+║        allow read, write: if true;                               ║
+║      }                                                           ║
+║      match /groups/{id} {                                        ║
+║        allow read, write: if true;                               ║
+║      }                                                           ║
+║      match /slots/{id} {                                         ║
+║        allow read, write: if true;                               ║
+║      }                                                           ║
+║      match /participants/{id} {                                  ║
+║        allow read, write: if true;                               ║
+║      }                                                           ║
+║    }                                                             ║
+║  }                                                               ║
+║                                                                  ║
+║  Note: Rules are open — admin security is enforced client-side   ║
+║  via 4-digit PIN (SHA-256 hashed, stored in /config/admin).      ║
+║  Suitable for internal workshop use. For public-facing tools,    ║
+║  add Firebase Authentication for stronger server-side security.  ║
+║                                                                  ║
+║  3. Project Settings → Your Apps → Add Web App                   ║
+║     Copy the firebaseConfig object and paste it below            ║
+║     where it says YOUR_CONFIG                                     ║
+║                                                                  ║
+║  4. GitHub Pages:                                                 ║
+║     → Create a repo → upload this file as index.html            ║
+║     → Settings → Pages → Deploy from main branch / root         ║
+║     → Firestore → Settings → Authorised domains → add your      ║
+║       GitHub Pages URL (yourname.github.io)                      ║
+╚══════════════════════════════════════════════════════════════════╝
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4E Workshop Scheduler</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#08080f;--glass:rgba(255,255,255,.04);--glass-mid:rgba(255,255,255,.07);
+  --glass-hi:rgba(255,255,255,.12);--border:rgba(255,255,255,.08);--border-hi:rgba(255,255,255,.22);
+  --purple:#a78bfa;--purple-dark:#7c3aed;--purple-dim:rgba(167,139,250,.14);--purple-glow:rgba(124,58,237,.3);
+  --cyan:#22d3ee;--cyan-dim:rgba(34,211,238,.10);
+  --orange:#fb923c;--orange-dim:rgba(251,146,60,.12);
+  --green:#34d399;--green-dim:rgba(52,211,153,.11);
+  --red:#f87171;--red-dim:rgba(248,113,113,.10);
+  --text:#f0eeff;--text-mid:#9d98be;--text-dim:#4a4868;
+  --syne:'Syne',sans-serif;--mono:'Space Mono',monospace;--r:14px;
+}
+html,body{min-height:100vh;background:var(--bg);color:var(--text);font-family:var(--syne);overflow-x:hidden}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:32px 32px;opacity:.5}
+body::after{content:'';position:fixed;top:-18%;left:50%;transform:translateX(-50%);width:900px;height:650px;border-radius:50%;background:radial-gradient(ellipse,var(--purple-glow) 0%,transparent 66%);pointer-events:none;z-index:0}
+.card{background:var(--glass);border:1px solid var(--border);border-radius:var(--r);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+input,select,button{font-family:inherit}
+input[type=text],input[type=number],input[type=date],input[type=time],input[type=email],input[type=password],select{
+  background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;
+  color:var(--text);padding:10px 14px;font-family:var(--mono);font-size:13px;outline:none;transition:border-color .2s;width:100%
+}
+select{cursor:pointer}
+select option{background:#1a1a2e;color:var(--text)}
+input:focus,select:focus{border-color:var(--purple)}
+input[type=date]::-webkit-calendar-picker-indicator,
+input[type=time]::-webkit-calendar-picker-indicator{filter:invert(.5);cursor:pointer}
+input::placeholder{color:var(--text-dim)}
+.btn-p{background:linear-gradient(135deg,var(--purple-dark),var(--cyan));border:none;border-radius:8px;color:#fff;font-family:var(--syne);font-size:13px;font-weight:700;padding:10px 20px;cursor:pointer;transition:opacity .2s;white-space:nowrap}
+.btn-p:hover{opacity:.82}
+.btn-p:disabled{opacity:.4;cursor:not-allowed}
+.btn-g{background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text-mid);font-family:var(--syne);font-size:13px;font-weight:600;padding:10px 16px;cursor:pointer;transition:all .2s}
+.btn-g:hover{background:var(--glass-mid);border-color:var(--border-hi);color:var(--text)}
+.btn-danger{background:var(--red-dim);border:1px solid rgba(248,113,113,.2);border-radius:8px;color:var(--red);font-family:var(--syne);font-size:12px;font-weight:700;padding:8px 14px;cursor:pointer;transition:all .2s}
+.btn-danger:hover{background:rgba(248,113,113,.2)}
+.btn-sm{padding:6px 14px !important;font-size:11px !important}
+.btn-rm{background:transparent;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;padding:2px 6px;transition:color .2s;line-height:1}
+.btn-rm:hover{color:var(--red)}
+.btn-icon{background:var(--glass);border:1px solid var(--border);border-radius:8px;color:var(--text-mid);font-size:16px;width:34px;height:34px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.btn-icon:hover{background:var(--glass-mid);border-color:var(--border-hi);color:var(--text)}
+.eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:4px;text-transform:uppercase}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes toastIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.88)}60%{transform:scale(1.06)}100%{transform:scale(1)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.anim{animation:fadeUp .4s ease both}
+.anim1{animation-delay:.08s}
+.anim2{animation-delay:.16s}
+.screen{position:relative;z-index:1;min-height:100vh;display:none;flex-direction:column}
+.screen.active{display:flex}
+.sticky-hdr{background:var(--glass);border-bottom:1px solid var(--border);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);padding:13px 24px;display:flex;align-items:center;gap:13px;position:sticky;top:0;z-index:50;flex-wrap:wrap}
+.hdr-title{font-size:18px;font-weight:800;flex:1}
+.tabs-wrap{display:flex;gap:3px;background:rgba(255,255,255,.04);padding:4px;border-radius:10px;flex-wrap:wrap}
+.tab-btn{font-family:var(--syne);font-size:12px;font-weight:700;padding:6px 16px;border-radius:7px;border:none;cursor:pointer;text-transform:capitalize;transition:all .2s;background:transparent;color:var(--text-mid)}
+.tab-btn.on{background:var(--glass-mid);color:var(--text)}
+.tab-btn:hover:not(.on){color:var(--text)}
+.t-badge{font-family:var(--mono);font-size:10px;margin-left:4px}
+.content{padding:28px 24px;max-width:960px;margin:0 auto;width:100%}
+
+/* home */
+#home{align-items:center;justify-content:center;padding:40px 16px}
+.h-hero{text-align:center;margin-bottom:52px}
+.h-hero h1{font-size:clamp(36px,7vw,62px);font-weight:800;line-height:1.1;margin-bottom:12px}
+.h-hero h1 span{background:linear-gradient(130deg,var(--purple) 20%,var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.h-hero p{color:var(--text-mid);font-size:15px}
+.h-cards{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;width:100%;max-width:760px}
+.h-card{padding:32px;flex:1 1 280px;max-width:360px}
+.h-card h2{font-size:21px;font-weight:700;margin-bottom:8px}
+.h-card p{color:var(--text-mid);font-size:13px;line-height:1.65;margin-bottom:24px}
+
+/* pin screen */
+#pin-screen{align-items:center;justify-content:center;padding:24px 16px}
+.pin-box{width:100%;max-width:360px;padding:36px;text-align:center}
+.pin-dots{display:flex;gap:14px;justify-content:center;margin:24px 0 28px}
+.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--border);transition:all .2s}
+.pin-dot.filled{background:var(--purple);border-color:var(--purple)}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:240px;margin:0 auto}
+.pp-btn{aspect-ratio:1;border-radius:12px;font-size:20px;font-weight:700;font-family:var(--syne);cursor:pointer;transition:all .15s;border:1px solid var(--border);background:var(--glass);color:var(--text)}
+.pp-btn:hover{background:var(--glass-hi);border-color:var(--border-hi)}
+.pp-btn:active{transform:scale(.92)}
+.pp-btn.del{font-size:14px;color:var(--text-mid)}
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-7px)}40%,80%{transform:translateX(7px)}}
+.shake{animation:shake .35s ease}
+
+/* calendar */
+.cal-wrap{user-select:none}
+.cal-nav{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.cal-month{font-size:16px;font-weight:800;flex:1}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-dow{text-align:center;font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text-dim);padding:0 0 8px}
+.cal-day{aspect-ratio:1;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;transition:all .15s;border:1px solid transparent}
+.cal-day:hover:not(.other-m){background:var(--glass-mid);border-color:var(--border)}
+.cal-day .dn{font-family:var(--mono);font-size:12px;font-weight:700;line-height:1}
+.cal-day.other-m{opacity:.22;pointer-events:none}
+.cal-day.today{border-color:rgba(34,211,238,.25)}
+.cal-day.today .dn{color:var(--cyan)}
+.cal-day.selected{background:var(--glass-hi);border-color:var(--purple)!important}
+.cal-day.selected .dn{color:var(--purple)}
+.cdots{display:flex;gap:2px;justify-content:center;flex-wrap:wrap;max-width:30px}
+.cdot{width:5px;height:5px;border-radius:50%}
+
+/* slots */
+.sc{padding:14px 16px;border-radius:var(--r);background:var(--glass);border:1px solid var(--border);cursor:pointer;transition:background .18s,border-color .18s,transform .15s}
+.sc:hover:not(.sc-taken):not(.sc-nomore){transform:translateY(-2px);background:var(--glass-mid)}
+.sc.sc-mine{background:var(--purple-dim);border-color:rgba(167,139,250,.4)}
+.sc.sc-taken{opacity:.38;cursor:not-allowed}
+.sc.sc-nomore{cursor:not-allowed}
+.sc.sc-flash{animation:pop .4s ease}
+.sc-time{font-family:var(--mono);font-size:16px;font-weight:700;margin-bottom:3px}
+.sc-lbl{font-size:11px;color:var(--text-mid);margin-bottom:7px}
+.sc-status{font-family:var(--mono);font-size:9px;letter-spacing:1.5px}
+.sc-hint{font-size:10px;color:var(--text-dim);margin-top:3px}
+.time-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:8px}
+
+/* admin rows */
+.asl-row{padding:11px 16px;margin-bottom:5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;transition:background .15s;border-radius:10px}
+.asl-row:hover{background:var(--glass-mid)}
+.asl-time{font-family:var(--mono);font-size:13px;font-weight:700;min-width:75px}
+.asl-lbl{font-size:12px;color:var(--text-mid);flex:1}
+.booked-name{font-size:11px;font-weight:600;color:var(--purple);background:var(--purple-dim);padding:3px 9px;border-radius:6px}
+.avail-tag{font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px}
+
+/* participants */
+.p-row{padding:13px 18px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;transition:background .15s}
+.p-row:hover{background:var(--glass-mid)}
+.avatar{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800}
+.p-info{flex:1;min-width:0}
+.p-name{font-size:14px;font-weight:700;margin-bottom:4px}
+.prog-wrap{display:flex;align-items:center;gap:9px}
+.prog-bar{width:80px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.prog-fill{height:100%;border-radius:2px;transition:width .4s;background:linear-gradient(90deg,var(--purple),var(--cyan))}
+.prog-fill.full{background:linear-gradient(90deg,var(--green),var(--cyan))}
+.p-stat{font-family:var(--mono);font-size:10px;color:var(--text-mid)}
+.code-pill{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:3px;color:var(--cyan);cursor:pointer;padding:5px 11px;background:var(--cyan-dim);border-radius:7px;border:1px solid rgba(34,211,238,.18);user-select:none;transition:background .2s;white-space:nowrap}
+.code-pill:hover{background:rgba(34,211,238,.2)}
+
+/* groups */
+.group-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;font-family:var(--syne)}
+.group-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.color-swatch{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:border-color .15s,transform .15s;flex-shrink:0}
+.color-swatch.picked{border-color:var(--text);transform:scale(1.15)}
+.color-palette{display:flex;gap:7px;flex-wrap:wrap}
+
+/* block generator */
+.block-preview{background:var(--glass-mid);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--cyan)}
+.block-slot-preview{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
+.bsp{background:var(--cyan-dim);border:1px solid rgba(34,211,238,.2);border-radius:6px;padding:3px 8px;font-size:11px;color:var(--cyan)}
+
+/* overview */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
+.stat-card{padding:16px 18px}
+.stat-n{font-family:var(--mono);font-size:26px;font-weight:700;margin-bottom:4px}
+.stat-l{font-size:11px;color:var(--text-mid)}
+.ov-mini-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:7px;margin-bottom:20px}
+.ov-mini{padding:12px 14px}
+.ov-time{font-family:var(--mono);font-size:13px;font-weight:700;margin-bottom:3px}
+.ov-lbl{font-size:10px;color:var(--text-mid);margin-bottom:4px}
+.ov-who{font-size:11px;font-weight:600}
+.date-heading{font-size:11px;font-weight:700;color:var(--text-mid);letter-spacing:3px;text-transform:uppercase;margin:20px 0 10px}
+.date-heading:first-child{margin-top:0}
+
+/* booking */
+.booking-layout{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start}
+@media(max-width:680px){.booking-layout{grid-template-columns:1fr}}
+.cal-col{position:sticky;top:78px}
+.sess-dots{display:flex;gap:4px}
+.sess-dot{width:9px;height:9px;border-radius:50%;background:var(--border);transition:background .3s}
+.sess-dot.on{background:var(--purple)}
+
+/* misc */
+.field-err{color:var(--red);font-size:12px;margin-top:4px}
+.empty{text-align:center;padding:32px 20px;color:var(--text-dim);font-size:13px}
+.empty-icon{font-size:22px;margin-bottom:8px;opacity:.3}
+.divider{height:1px;background:var(--border);margin:18px 0}
+.sub-form{background:var(--glass-mid);border:1px solid var(--border);border-radius:10px;padding:18px;margin-top:12px;animation:fadeIn .2s ease}
+.sub-form h4{font-family:var(--mono);font-size:10px;letter-spacing:3px;color:var(--text-mid);margin-bottom:14px}
+.form-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.inline-field{display:flex;flex-direction:column;gap:5px}
+.inline-field label{font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px}
+.inline-field input,.inline-field select{width:auto}
+.spinner{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--purple);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+#toast{position:fixed;top:20px;right:20px;z-index:9999;padding:10px 18px;border-radius:10px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);font-family:var(--syne);font-size:13px;font-weight:700;animation:toastIn .2s ease both;pointer-events:none;display:none}
+#toast.ok{background:var(--green-dim);border:1px solid var(--green);color:var(--green)}
+#toast.err{background:var(--red-dim);border:1px solid var(--red);color:var(--red)}
+</style>
+</head>
+<body>
+<div id="toast"></div>
+
+<!-- ══════════════════════ HOME ══════════════════════ -->
+<div id="home" class="screen active">
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px">
+    <div class="h-hero anim">
+      <div class="eyebrow" style="color:var(--cyan);margin-bottom:14px">4E VIRTUAL DESIGN</div>
+      <h1>Workshop <span>Scheduler</span></h1>
+      <p>Book your 1-to-1 sessions with ease</p>
+    </div>
+    <div class="h-cards">
+      <div class="card h-card anim anim1">
+        <div class="eyebrow" style="color:var(--cyan);margin-bottom:18px">PARTICIPANT</div>
+        <h2>Book Your Session</h2>
+        <p>Enter the booking code shared by your workshop host to view and pick your available time slots.</p>
+        <input type="text" id="codeInput" placeholder="Your booking code…" style="margin-bottom:8px;letter-spacing:3px;font-size:14px" maxlength="7" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter')enterCode()">
+        <div id="codeErr" class="field-err" style="display:none;margin-bottom:8px"></div>
+        <button class="btn-p" style="width:100%;padding:12px" onclick="enterCode()">Open My Calendar →</button>
+      </div>
+      <div class="card h-card anim anim2">
+        <div class="eyebrow" style="color:var(--orange);margin-bottom:18px">HOST</div>
+        <h2>Admin Dashboard</h2>
+        <p>Manage workshop groups, participants, and time slots. Protected by your admin account.</p>
+        <button class="btn-g" style="width:100%;padding:12px" onclick="goAdmin()">Open Admin →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ PIN ══════════════════════ -->
+<div id="pin-screen" class="screen">
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px 16px">
+    <div class="card pin-box anim">
+      <div class="eyebrow" style="color:var(--orange);margin-bottom:14px">ADMIN ACCESS</div>
+      <h2 id="pinTitle" style="font-size:22px;font-weight:800;margin-bottom:6px">Enter PIN</h2>
+      <p id="pinSub" style="color:var(--text-mid);font-size:13px;line-height:1.6">Enter your 4-digit admin PIN.</p>
+      <div class="pin-dots" id="pinDots">
+        <div class="pin-dot" id="pd0"></div>
+        <div class="pin-dot" id="pd1"></div>
+        <div class="pin-dot" id="pd2"></div>
+        <div class="pin-dot" id="pd3"></div>
+      </div>
+      <div id="pinErr" class="field-err" style="display:none;margin-bottom:12px;text-align:center"></div>
+      <div class="pin-pad" id="pinPad">
+        <button class="pp-btn" onclick="pinKey('1')">1</button>
+        <button class="pp-btn" onclick="pinKey('2')">2</button>
+        <button class="pp-btn" onclick="pinKey('3')">3</button>
+        <button class="pp-btn" onclick="pinKey('4')">4</button>
+        <button class="pp-btn" onclick="pinKey('5')">5</button>
+        <button class="pp-btn" onclick="pinKey('6')">6</button>
+        <button class="pp-btn" onclick="pinKey('7')">7</button>
+        <button class="pp-btn" onclick="pinKey('8')">8</button>
+        <button class="pp-btn" onclick="pinKey('9')">9</button>
+        <div></div>
+        <button class="pp-btn" onclick="pinKey('0')">0</button>
+        <button class="pp-btn del" onclick="pinDel()">⌫</button>
+      </div>
+      <button class="btn-g btn-sm" style="width:100%;margin-top:18px" onclick="goHome()">← Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ ADMIN ══════════════════════ -->
+<div id="admin" class="screen">
+  <div class="sticky-hdr">
+    <div class="eyebrow" style="color:var(--orange)">4E WORKSHOPS</div>
+    <div class="hdr-title">Admin</div>
+    <div class="tabs-wrap">
+      <button class="tab-btn on" id="tab-groups" onclick="switchTab('groups')">Groups <span class="t-badge" id="badge-g" style="color:var(--cyan)"></span></button>
+      <button class="tab-btn" id="tab-participants" onclick="switchTab('participants')">Participants <span class="t-badge" id="badge-p" style="color:var(--purple)"></span></button>
+      <button class="tab-btn" id="tab-slots" onclick="switchTab('slots')">Calendar <span class="t-badge" id="badge-s" style="color:var(--orange)"></span></button>
+      <button class="tab-btn" id="tab-overview" onclick="switchTab('overview')">Overview</button>
+      <button class="tab-btn" id="tab-settings" onclick="switchTab('settings')">⚙</button>
+    </div>
+    <button class="btn-g btn-sm" onclick="doLogout()">🔒 Lock</button>
+  </div>
+  <div class="content">
+
+    <!-- GROUPS -->
+    <div id="pane-groups">
+      <div class="card" style="padding:22px;margin-bottom:18px">
+        <div class="eyebrow" style="color:var(--cyan);margin-bottom:16px">CREATE WORKSHOP GROUP</div>
+        <div class="form-row" style="margin-bottom:14px">
+          <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:6px">
+            <label style="font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px">GROUP NAME</label>
+            <input type="text" id="gName" placeholder="e.g. Cohort A, Tuesday Group…" onkeydown="if(event.key==='Enter')addGroup()">
+          </div>
+        </div>
+        <div style="margin-bottom:14px">
+          <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">GROUP COLOUR</div>
+          <div class="color-palette" id="colorPalette"></div>
+        </div>
+        <button class="btn-p" onclick="addGroup()">+ Create Group</button>
+      </div>
+      <div id="groupsList"></div>
+    </div>
+
+    <!-- PARTICIPANTS -->
+    <div id="pane-participants" style="display:none">
+      <div class="card" style="padding:20px;margin-bottom:18px">
+        <div class="eyebrow" style="color:var(--purple);margin-bottom:14px">ADD PARTICIPANT</div>
+        <div class="form-row">
+          <div class="inline-field" style="flex:1;min-width:150px">
+            <label>NAME</label>
+            <input type="text" id="pName" placeholder="Participant name" onkeydown="if(event.key==='Enter')addParticipant()">
+          </div>
+          <div class="inline-field">
+            <label>SESSIONS</label>
+            <input type="number" id="pSess" min="1" max="20" value="1" style="width:72px">
+          </div>
+          <div class="inline-field" style="min-width:160px">
+            <label>GROUP</label>
+            <select id="pGroup"></select>
+          </div>
+          <button class="btn-p" onclick="addParticipant()">+ Add</button>
+        </div>
+      </div>
+      <div id="participantsList"></div>
+    </div>
+
+    <!-- CALENDAR / SLOTS -->
+    <div id="pane-slots" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+        <div class="card" style="padding:22px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <div class="eyebrow" style="color:var(--orange)">SLOT CALENDAR</div>
+            <div style="flex:1"></div>
+            <select id="calGroupFilter" style="font-size:11px;padding:5px 10px;width:auto" onchange="renderAdminCal();if(adminSelDate)renderAdminDayPanel(adminSelDate)">
+              <option value="all">All Groups</option>
+            </select>
+          </div>
+          <div id="adminCalWrap"></div>
+          <div id="adminDayPanel" style="display:none">
+            <div class="divider"></div>
+            <div id="adminDayTitle" class="eyebrow" style="color:var(--text-mid);margin-bottom:12px"></div>
+            <div id="adminDaySlots"></div>
+            <div style="display:flex;gap:8px;margin-top:14px">
+              <button class="btn-g btn-sm" style="flex:1" onclick="showSubForm('single')">+ Single Slot</button>
+              <button class="btn-p btn-sm" style="flex:1" onclick="showSubForm('block')">⊞ Time Block</button>
+            </div>
+            <div id="form-single" class="sub-form" style="display:none">
+              <h4>ADD SINGLE SLOT</h4>
+              <div class="form-row">
+                <div class="inline-field">
+                  <label>TIME</label>
+                  <input type="time" id="sTime" style="width:130px">
+                </div>
+                <div class="inline-field" style="flex:1;min-width:110px">
+                  <label>LABEL (optional)</label>
+                  <input type="text" id="sLabel" placeholder="e.g. Intro">
+                </div>
+                <div class="inline-field" style="min-width:130px">
+                  <label>GROUP</label>
+                  <select id="sGroup"></select>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:12px">
+                <button class="btn-p btn-sm" onclick="addSingleSlot()" style="flex:1">Add Slot</button>
+                <button class="btn-g btn-sm" onclick="showSubForm(null)">Cancel</button>
+              </div>
+            </div>
+            <div id="form-block" class="sub-form" style="display:none">
+              <h4>GENERATE TIME BLOCK</h4>
+              <div class="form-row">
+                <div class="inline-field">
+                  <label>START</label>
+                  <input type="time" id="bStart" oninput="previewBlock()" style="width:120px">
+                </div>
+                <div class="inline-field">
+                  <label>END</label>
+                  <input type="time" id="bEnd" oninput="previewBlock()" style="width:120px">
+                </div>
+                <div class="inline-field">
+                  <label>SESSION</label>
+                  <select id="bDur" oninput="previewBlock()" style="width:110px">
+                    <option value="15">15 min</option>
+                    <option value="20">20 min</option>
+                    <option value="30" selected>30 min</option>
+                    <option value="45">45 min</option>
+                    <option value="60">60 min</option>
+                    <option value="90">90 min</option>
+                    <option value="120">2 hours</option>
+                  </select>
+                </div>
+                <div class="inline-field">
+                  <label>BREAK</label>
+                  <select id="bBreak" oninput="previewBlock()" style="width:100px">
+                    <option value="0">None</option>
+                    <option value="5">5 min</option>
+                    <option value="10">10 min</option>
+                    <option value="15">15 min</option>
+                  </select>
+                </div>
+                <div class="inline-field" style="min-width:130px">
+                  <label>GROUP</label>
+                  <select id="bGroup"></select>
+                </div>
+              </div>
+              <div id="blockPreview" style="display:none" class="block-preview">
+                <div id="blockPreviewText"></div>
+                <div id="blockPreviewSlots" class="block-slot-preview"></div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:12px">
+                <button class="btn-p btn-sm" onclick="addBlock()" style="flex:1">Generate Slots</button>
+                <button class="btn-g btn-sm" onclick="showSubForm(null)">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="padding:22px">
+          <div class="eyebrow" style="color:var(--text-mid);margin-bottom:14px">ALL SLOTS</div>
+          <div id="allSlotsList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OVERVIEW -->
+    <div id="pane-overview" style="display:none">
+      <div class="stats-grid" id="statsGrid"></div>
+      <div id="overviewContent"></div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="pane-settings" style="display:none">
+      <div class="card" style="padding:24px;max-width:440px;margin-bottom:20px">
+        <div class="eyebrow" style="color:var(--purple);margin-bottom:16px">SECURITY</div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Change Admin PIN</h3>
+        <p style="color:var(--text-mid);font-size:13px;margin-bottom:18px;line-height:1.6">Set a new 4-digit PIN. You'll need to enter it next time you open Admin.</p>
+        <div id="changePinWrap">
+          <button class="btn-p btn-sm" onclick="startChangePin()">Change PIN…</button>
+        </div>
+        <div id="changePinFlow" style="display:none;margin-top:16px">
+          <p id="changePinLabel" style="font-family:var(--mono);font-size:11px;color:var(--text-mid);letter-spacing:2px;margin-bottom:12px">ENTER NEW PIN</p>
+          <div class="pin-dots" id="cpDots" style="justify-content:flex-start;gap:10px;margin:0 0 14px">
+            <div class="pin-dot" id="cpd0"></div>
+            <div class="pin-dot" id="cpd1"></div>
+            <div class="pin-dot" id="cpd2"></div>
+            <div class="pin-dot" id="cpd3"></div>
+          </div>
+          <div class="pin-pad" style="max-width:200px;gap:8px">
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('1')">1</button>
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('2')">2</button>
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('3')">3</button>
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('4')">4</button>
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('5')">5</button>
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('6')">6</button>
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('7')">7</button>
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('8')">8</button>
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('9')">9</button>
+            <div></div>
+            <button class="pp-btn" style="font-size:16px" onclick="cpKey('0')">0</button>
+            <button class="pp-btn del" onclick="cpDel()">⌫</button>
+          </div>
+          <div id="cpErr" class="field-err" style="display:none;margin-top:10px"></div>
+          <button class="btn-g btn-sm" style="margin-top:14px" onclick="cancelChangePin()">Cancel</button>
+        </div>
+      </div>
+      <div class="card" style="padding:24px;max-width:440px">
+        <div class="eyebrow" style="color:var(--red);margin-bottom:16px">DANGER ZONE</div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Reset All Data</h3>
+        <p style="color:var(--text-mid);font-size:13px;margin-bottom:18px;line-height:1.6">Permanently delete all groups, participants, slots, and bookings. Cannot be undone.</p>
+        <button class="btn-danger" onclick="showResetConfirm()">Reset All Data</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ BOOKING ══════════════════════ -->
+<div id="booking" class="screen">
+  <div class="sticky-hdr">
+    <button class="btn-g btn-sm" onclick="goHome()">← Back</button>
+    <div class="eyebrow" style="color:var(--cyan)">4E VIRTUAL DESIGN</div>
+    <div style="flex:1"></div>
+    <div class="card" style="display:flex;align-items:center;gap:12px;padding:8px 16px">
+      <div>
+        <div class="eyebrow" style="color:var(--text-mid);margin-bottom:5px">SESSIONS LEFT</div>
+        <div id="sessDots" class="sess-dots"></div>
+      </div>
+      <div id="sessNum" style="font-size:22px;font-weight:800;font-family:var(--syne)">0</div>
+    </div>
+  </div>
+  <div class="content">
+    <div style="margin-bottom:26px" class="anim">
+      <div class="eyebrow" style="color:var(--cyan);margin-bottom:10px">WELCOME</div>
+      <h1 id="bookingName" style="font-size:clamp(22px,5vw,38px);font-weight:800;margin-bottom:8px"></h1>
+      <div id="bookingGroupChip" style="margin-bottom:8px"></div>
+      <p id="bookingMsg" style="color:var(--text-mid);font-size:14px"></p>
+    </div>
+    <div class="booking-layout">
+      <div class="cal-col card" style="padding:22px">
+        <div class="eyebrow" style="color:var(--purple);margin-bottom:14px">SELECT A DATE</div>
+        <div id="bookingCalWrap"></div>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--text-dim);font-family:var(--mono)">
+          <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:var(--green)"></div>Available</div>
+          <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:var(--purple)"></div>Your booking</div>
+          <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:var(--text-dim)"></div>Taken</div>
+        </div>
+      </div>
+      <div>
+        <div id="bookingDayPanel"><div class="empty"><div class="empty-icon">↑</div>Pick a date to see available slots</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reset overlay -->
+<div id="resetOverlay" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);align-items:center;justify-content:center">
+  <div class="card anim" style="padding:32px;max-width:380px;margin:16px;text-align:center">
+    <div style="font-size:32px;margin-bottom:16px">⚠️</div>
+    <h3 style="font-size:18px;font-weight:800;margin-bottom:10px">Reset All Data?</h3>
+    <p style="color:var(--text-mid);font-size:13px;margin-bottom:24px;line-height:1.65">This will permanently delete all groups, participants, slots, and bookings from Firestore. This cannot be undone.</p>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btn-danger" onclick="confirmReset()">Yes, Reset Everything</button>
+      <button class="btn-g" onclick="document.getElementById('resetOverlay').style.display='none'">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  FIREBASE CONFIG — replace with your project config
+// ══════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ══════════════════════════════════════════════════════
+//  PIN / AUTH STATE
+// ══════════════════════════════════════════════════════
+let adminAuthed = false; // true after correct PIN this session
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// ══════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════
+let currentPid       = null;
+let pinBuffer        = '';   // digits being entered on PIN screen
+let cpBuffer         = '';   // digits being entered in Change PIN flow
+let cpTempPin        = '';   // first entry for confirmation
+let cpStep           = 'new'; // 'new' | 'confirm'
+let adminCalDate     = new Date();
+let bookingCalDate   = new Date();
+let adminSelDate     = null;
+let bookingSelDate   = null;
+let editingId        = null;
+let selectedColor    = '#22d3ee';
+let toastTimer       = null;
+
+// In-memory mirrors of Firestore
+let groups       = [];
+let participants = [];
+let slots        = [];
+let bookingSlots = []; // filtered for current participant
+
+// Listener handles
+let unsubGroups = null, unsubParticipants = null, unsubSlots = null;
+let unsubBookingSlots = null, unsubParticipant = null;
+
+const GROUP_COLORS = ['#22d3ee','#a78bfa','#fb923c','#34d399','#f472b6','#fbbf24','#f87171','#60a5fa','#e879f9','#a3e635'];
+
+// ══════════════════════════════════════════════════════
+//  PIN FUNCTIONS
+// ══════════════════════════════════════════════════════
+async function goAdmin() {
+  // If already authed this session, go straight in
+  if (adminAuthed) { startAdminListeners(); renderAdminShell(); showScreen('admin'); return; }
+  // Load PIN screen
+  pinBuffer = '';
+  const snap = await db.collection('config').doc('admin').get();
+  const hasPIN = snap.exists && snap.data().pinHash;
+  document.getElementById('pinTitle').textContent = hasPIN ? 'Enter PIN' : 'Create PIN';
+  document.getElementById('pinSub').textContent   = hasPIN ? 'Enter your 4-digit admin PIN.' : 'Set a 4-digit PIN to protect the admin dashboard.';
+  updatePinDots('pinDots', 0);
+  document.getElementById('pinErr').style.display = 'none';
+  showScreen('pin-screen');
+}
+
+function updatePinDots(containerId, count) {
+  const prefix = containerId === 'pinDots' ? 'pd' : 'cpd';
+  for (let i=0;i<4;i++) {
+    const el = document.getElementById(prefix+i);
+    if (el) el.classList.toggle('filled', i < count);
+  }
+}
+
+async function pinKey(d) {
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += d;
+  updatePinDots('pinDots', pinBuffer.length);
+  document.getElementById('pinErr').style.display = 'none';
+  if (pinBuffer.length === 4) await processPIN();
+}
+
+function pinDel() {
+  if (!pinBuffer.length) return;
+  pinBuffer = pinBuffer.slice(0,-1);
+  updatePinDots('pinDots', pinBuffer.length);
+}
+
+async function processPIN() {
+  const snap = await db.collection('config').doc('admin').get();
+  const hasPIN = snap.exists && snap.data().pinHash;
+
+  if (!hasPIN) {
+    // First time — store the PIN
+    const hash = await sha256(pinBuffer);
+    await db.collection('config').doc('admin').set({ pinHash: hash });
+    adminAuthed = true;
+    startAdminListeners();
+    renderAdminShell();
+    showScreen('admin');
+    toast('PIN set ✓');
+  } else {
+    const hash = await sha256(pinBuffer);
+    if (hash === snap.data().pinHash) {
+      adminAuthed = true;
+      startAdminListeners();
+      renderAdminShell();
+      showScreen('admin');
+    } else {
+      // Wrong PIN — shake and clear
+      const dots = document.getElementById('pinDots');
+      dots.classList.add('shake');
+      setTimeout(() => dots.classList.remove('shake'), 400);
+      pinBuffer = '';
+      updatePinDots('pinDots', 0);
+      const err = document.getElementById('pinErr');
+      err.textContent = 'Incorrect PIN';
+      err.style.display = 'block';
+    }
+  }
+}
+
+function doLogout() {
+  adminAuthed = false;
+  stopAdminListeners();
+  goHome();
+}
+
+// ══════════════════════════════════════════════════════
+//  CHANGE PIN (Settings)
+// ══════════════════════════════════════════════════════
+function startChangePin() {
+  cpBuffer=''; cpTempPin=''; cpStep='new';
+  document.getElementById('changePinLabel').textContent = 'ENTER NEW PIN';
+  updateCpDots(0);
+  document.getElementById('cpErr').style.display='none';
+  document.getElementById('changePinWrap').style.display='none';
+  document.getElementById('changePinFlow').style.display='block';
+}
+
+function cancelChangePin() {
+  document.getElementById('changePinFlow').style.display='none';
+  document.getElementById('changePinWrap').style.display='block';
+}
+
+function updateCpDots(n) {
+  for(let i=0;i<4;i++) document.getElementById('cpd'+i).classList.toggle('filled',i<n);
+}
+
+async function cpKey(d) {
+  if (cpBuffer.length>=4) return;
+  cpBuffer += d;
+  updateCpDots(cpBuffer.length);
+  document.getElementById('cpErr').style.display='none';
+  if (cpBuffer.length===4) await processCpPin();
+}
+
+function cpDel() {
+  if (!cpBuffer.length) return;
+  cpBuffer=cpBuffer.slice(0,-1);
+  updateCpDots(cpBuffer.length);
+}
+
+async function processCpPin() {
+  if (cpStep==='new') {
+    cpTempPin = cpBuffer;
+    cpBuffer = '';
+    cpStep = 'confirm';
+    document.getElementById('changePinLabel').textContent = 'CONFIRM NEW PIN';
+    updateCpDots(0);
+  } else {
+    if (cpBuffer === cpTempPin) {
+      const hash = await sha256(cpBuffer);
+      await db.collection('config').doc('admin').set({ pinHash: hash });
+      toast('PIN updated ✓');
+      cancelChangePin();
+    } else {
+      const dots = document.getElementById('cpDots');
+      dots.classList.add('shake');
+      setTimeout(()=>dots.classList.remove('shake'),400);
+      cpBuffer=''; cpTempPin=''; cpStep='new';
+      updateCpDots(0);
+      document.getElementById('changePinLabel').textContent='ENTER NEW PIN';
+      const err = document.getElementById('cpErr');
+      err.textContent="PINs didn't match — try again";
+      err.style.display='block';
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════════════════
+const uid      = () => Math.random().toString(36).slice(2,9).toUpperCase();
+const todayStr = () => { const n=new Date(); return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`; };
+const pad      = n => String(n).padStart(2,'0');
+const fmtLong  = d => new Date(d+'T12:00').toLocaleDateString('en-IE',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+const fmtShort = d => new Date(d+'T12:00').toLocaleDateString('en-IE',{weekday:'short',day:'numeric',month:'short'});
+const fmtMY    = dt => dt.toLocaleDateString('en-IE',{month:'long',year:'numeric'});
+const fmtTime  = t  => { const[h,m]=t.split(':').map(Number); return `${h%12||12}:${pad(m)} ${h>=12?'PM':'AM'}`; };
+const esc      = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const getBooker = sId => participants.find(p => p.bookedSlots?.includes(sId));
+const getGroup  = id  => groups.find(g => g.id === id);
+const groupByDate = arr => {
+  const m={};
+  arr.forEach(s=>{ if(!m[s.date])m[s.date]=[]; m[s.date].push(s); });
+  return Object.entries(m).sort(([a],[b])=>a.localeCompare(b));
+};
+
+// ══════════════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════════════
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = type; el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.style.display='none', 2600);
+}
+
+// ══════════════════════════════════════════════════════
+//  SCREEN NAVIGATION
+// ══════════════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+function goHome() {
+  // Stop participant listeners when leaving booking
+  if (unsubBookingSlots) { unsubBookingSlots(); unsubBookingSlots = null; }
+  if (unsubParticipant)  { unsubParticipant();  unsubParticipant  = null; }
+  currentPid = null;
+  bookingSlots = [];
+  showScreen('home');
+}
+
+
+
+
+
+// ══════════════════════════════════════════════════════
+//  FIRESTORE LISTENERS (admin)
+// ══════════════════════════════════════════════════════
+function startAdminListeners() {
+  if (unsubGroups) return; // already listening
+
+  unsubGroups = db.collection('groups').orderBy('name').onSnapshot(snap => {
+    groups = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    renderGroups();
+    renderGroupSelects();
+    renderBadges();
+  }, err => console.error('groups listener:', err));
+
+  unsubParticipants = db.collection('participants').orderBy('name').onSnapshot(snap => {
+    participants = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    if (editingId) return; // don't wipe an active edit
+    renderParticipants();
+    renderBadges();
+  }, err => console.error('participants listener:', err));
+
+  unsubSlots = db.collection('slots').orderBy('date').orderBy('time').onSnapshot(snap => {
+    slots = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    renderAdminCal();
+    renderAllSlotsList();
+    renderBadges();
+    if (adminSelDate) renderAdminDayPanel(adminSelDate);
+  }, err => console.error('slots listener:', err));
+}
+
+function stopAdminListeners() {
+  if (unsubGroups)       { unsubGroups();       unsubGroups       = null; }
+  if (unsubParticipants) { unsubParticipants();  unsubParticipants = null; }
+  if (unsubSlots)        { unsubSlots();         unsubSlots        = null; }
+  groups = []; participants = []; slots = [];
+}
+
+// ══════════════════════════════════════════════════════
+//  ADMIN SHELL
+// ══════════════════════════════════════════════════════
+function renderAdminShell() {
+  selectedColor = GROUP_COLORS[0];
+  renderColorPalette();
+  renderGroupSelects();
+  switchTab('groups');
+}
+
+// ══════════════════════════════════════════════════════
+//  GROUPS
+// ══════════════════════════════════════════════════════
+function renderColorPalette() {
+  document.getElementById('colorPalette').innerHTML = GROUP_COLORS.map(c =>
+    `<div class="color-swatch${c===selectedColor?' picked':''}" style="background:${c}" onclick="pickColor('${c}')"></div>`
+  ).join('');
+}
+function pickColor(c) { selectedColor = c; renderColorPalette(); }
+
+async function addGroup() {
+  const name = document.getElementById('gName').value.trim();
+  if (!name) return;
+  try {
+    await db.collection('groups').doc(uid()).set({ name, color: selectedColor });
+    toast(`Group "${name}" created ✓`);
+    document.getElementById('gName').value = '';
+  } catch(e) { toast('Error creating group', 'err'); }
+}
+
+async function removeGroup(id) {
+  if (participants.some(p => p.groupId === id)) { toast('Remove participants from this group first', 'err'); return; }
+  if (slots.some(s => s.groupId === id))        { toast('Remove slots for this group first', 'err'); return; }
+  try {
+    await db.collection('groups').doc(id).delete();
+    toast('Group removed');
+  } catch(e) { toast('Error removing group', 'err'); }
+}
+
+function renderGroups() {
+  const el = document.getElementById('groupsList');
+  if (!el) return;
+  if (groups.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">◇</div>No groups yet — create one above.</div>`;
+    return;
+  }
+  el.innerHTML = groups.map(g => {
+    const pCount = participants.filter(p => p.groupId === g.id).length;
+    const sCount = slots.filter(s => s.groupId === g.id).length;
+    return `<div class="card p-row">
+      <div style="width:38px;height:38px;border-radius:50%;background:${g.color};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#000">${esc(g.name[0].toUpperCase())}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700;margin-bottom:3px">${esc(g.name)}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">${pCount} participant${pCount!==1?'s':''} &nbsp;·&nbsp; ${sCount} slot${sCount!==1?'s':''}</div>
+      </div>
+      <div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>
+      <button class="btn-rm" onclick="removeGroup('${g.id}')">×</button>
+    </div>`;
+  }).join('');
+}
+
+function renderGroupSelects() {
+  const baseOptions = `<option value="all">All Groups</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  ['sGroup','bGroup','calGroupFilter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const v = el.value; el.innerHTML = baseOptions; el.value = v || 'all'; }
+  });
+  const pGroupEl = document.getElementById('pGroup');
+  if (pGroupEl) pGroupEl.innerHTML = `<option value="">No group</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+}
+
+// ══════════════════════════════════════════════════════
+//  PARTICIPANTS
+// ══════════════════════════════════════════════════════
+async function addParticipant() {
+  const name = document.getElementById('pName').value.trim();
+  const n    = parseInt(document.getElementById('pSess').value) || 1;
+  const gid  = document.getElementById('pGroup').value || null;
+  if (!name) return;
+  const id = uid();
+  try {
+    await db.collection('participants').doc(id).set({ name, sessionsAllocated: n, bookedSlots: [], groupId: gid });
+    toast(`${name} added ✓`);
+    document.getElementById('pName').value = '';
+    document.getElementById('pSess').value = 1;
+  } catch(e) { toast('Error adding participant', 'err'); }
+}
+
+async function removeParticipant(id) {
+  try { await db.collection('participants').doc(id).delete(); toast('Removed'); }
+  catch(e) { toast('Error removing participant', 'err'); }
+}
+
+function startEdit(id) { editingId = id; renderParticipants(); }
+function cancelEdit()  { editingId = null; renderParticipants(); }
+
+async function saveEdit(id) {
+  const v = parseInt(document.getElementById('editVal_'+id).value) || 1;
+  try {
+    await db.collection('participants').doc(id).update({ sessionsAllocated: v });
+    editingId = null; toast('Updated ✓');
+  } catch(e) { toast('Error saving', 'err'); }
+}
+
+function copyCode(code) {
+  navigator.clipboard.writeText(code).catch(()=>{});
+  toast('Code copied! ✓');
+}
+
+function renderParticipants() {
+  const el = document.getElementById('participantsList');
+  if (!el) return;
+  if (participants.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">◇</div>No participants yet — add one above.</div>`;
+    return;
+  }
+  const byGroup = {};
+  participants.forEach(p => { const k = p.groupId || '__none'; if (!byGroup[k]) byGroup[k]=[]; byGroup[k].push(p); });
+  let html = '';
+  groups.forEach(g => {
+    const ps = byGroup[g.id] || [];
+    if (!ps.length) return;
+    html += `<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px">
+      <div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>
+      <div style="flex:1;height:1px;background:var(--border)"></div></div>`;
+    html += ps.map(p => participantRow(p, g.color)).join('');
+  });
+  if (byGroup['__none']?.length) {
+    html += `<div style="margin:16px 0 8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:2px">UNGROUPED</div>`;
+    html += byGroup['__none'].map(p => participantRow(p, 'var(--text-dim)')).join('');
+  }
+  el.innerHTML = html;
+}
+
+function participantRow(p, color) {
+  const pct = Math.min(100, ((p.bookedSlots?.length||0) / p.sessionsAllocated) * 100);
+  const full = pct >= 100;
+  const isEd = editingId === p.id;
+  return `<div class="card p-row">
+    <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${esc(p.name[0].toUpperCase())}</div>
+    <div class="p-info">
+      <div class="p-name">${esc(p.name)}</div>
+      <div class="prog-wrap">
+        <div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>
+        <span class="p-stat">${p.bookedSlots?.length||0}/${p.sessionsAllocated}</span>
+        ${full?'<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px">FULL</span>':''}
+      </div>
+    </div>
+    ${isEd
+      ? `<div style="display:flex;gap:6px;align-items:center">
+           <input type="number" id="editVal_${p.id}" min="1" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px">
+           <button class="btn-p btn-sm" onclick="saveEdit('${p.id}')">Save</button>
+           <button class="btn-g btn-sm" onclick="cancelEdit()">✕</button>
+         </div>`
+      : `<button class="btn-g btn-sm" onclick="startEdit('${p.id}')">Edit</button>`}
+    <div class="code-pill" onclick="copyCode('${p.id}')" title="Click to copy">${p.id}</div>
+    <button class="btn-rm" onclick="removeParticipant('${p.id}')">×</button>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════
+//  SLOTS — admin operations
+// ══════════════════════════════════════════════════════
+function showSubForm(type) {
+  document.getElementById('form-single').style.display = type==='single' ? 'block' : 'none';
+  document.getElementById('form-block').style.display  = type==='block'  ? 'block' : 'none';
+  if (type === 'block')  previewBlock();
+  if (type === 'single') setTimeout(() => document.getElementById('sTime').focus(), 50);
+}
+
+async function addSingleSlot() {
+  if (!adminSelDate) return;
+  const time    = document.getElementById('sTime').value;
+  const label   = document.getElementById('sLabel').value.trim();
+  const groupId = document.getElementById('sGroup').value || 'all';
+  if (!time) { toast('Pick a time', 'err'); return; }
+  if (slots.find(s => s.date===adminSelDate && s.time===time && s.groupId===groupId)) { toast('Slot already exists', 'err'); return; }
+  try {
+    await db.collection('slots').doc(uid()).set({ date: adminSelDate, time, label, groupId });
+    toast('Slot added ✓');
+    document.getElementById('sTime').value  = '';
+    document.getElementById('sLabel').value = '';
+  } catch(e) { toast('Error adding slot', 'err'); }
+}
+
+function previewBlock() {
+  const start = document.getElementById('bStart').value;
+  const end   = document.getElementById('bEnd').value;
+  const dur   = parseInt(document.getElementById('bDur').value);
+  const brk   = parseInt(document.getElementById('bBreak').value);
+  const prev  = document.getElementById('blockPreview');
+  if (!start || !end) { prev.style.display='none'; return; }
+  const times = generateBlockSlots(start, end, dur, brk);
+  prev.style.display = 'block';
+  document.getElementById('blockPreviewText').textContent =
+    times.length ? `${times.length} slot${times.length!==1?'s':''} of ${dur} min${brk>0?` + ${brk} min break`:''}:`
+                 : 'No slots fit in this range.';
+  document.getElementById('blockPreviewSlots').innerHTML = times.map(t => `<div class="bsp">${fmtTime(t)}</div>`).join('');
+}
+
+function generateBlockSlots(start, end, dur, brk) {
+  const toMins = t => { const[h,m]=t.split(':').map(Number); return h*60+m; };
+  const toTime = m => `${pad(Math.floor(m/60))}:${pad(m%60)}`;
+  const s=toMins(start), e=toMins(end);
+  const out=[]; let cur=s;
+  while (cur+dur <= e) { out.push(toTime(cur)); cur += dur+brk; }
+  return out;
+}
+
+async function addBlock() {
+  if (!adminSelDate) return;
+  const start   = document.getElementById('bStart').value;
+  const end     = document.getElementById('bEnd').value;
+  const dur     = parseInt(document.getElementById('bDur').value);
+  const brk     = parseInt(document.getElementById('bBreak').value);
+  const groupId = document.getElementById('bGroup').value || 'all';
+  const label   = document.getElementById('bDur').options[document.getElementById('bDur').selectedIndex].text + ' session';
+  if (!start || !end) { toast('Set start and end times', 'err'); return; }
+  const times = generateBlockSlots(start, end, dur, brk);
+  if (!times.length) { toast('No slots fit in this range', 'err'); return; }
+  try {
+    const batch = db.batch();
+    let added = 0;
+    times.forEach(t => {
+      if (!slots.find(s => s.date===adminSelDate && s.time===t && s.groupId===groupId)) {
+        batch.set(db.collection('slots').doc(uid()), { date: adminSelDate, time: t, label, groupId });
+        added++;
+      }
+    });
+    await batch.commit();
+    showSubForm(null);
+    toast(`${added} slot${added!==1?'s':''} generated ✓`);
+  } catch(e) { toast('Error generating slots', 'err'); }
+}
+
+async function removeSlot(id) {
+  try {
+    const batch = db.batch();
+    batch.delete(db.collection('slots').doc(id));
+    // cascade: remove from any participant's bookedSlots
+    participants.filter(p => p.bookedSlots?.includes(id)).forEach(p => {
+      batch.update(db.collection('participants').doc(p.id), {
+        bookedSlots: p.bookedSlots.filter(s => s !== id)
+      });
+    });
+    await batch.commit();
+    toast('Slot removed');
+  } catch(e) { toast('Error removing slot', 'err'); }
+}
+
+// ══════════════════════════════════════════════════════
+//  CALENDAR RENDERER (shared)
+// ══════════════════════════════════════════════════════
+function renderCalendar(containerId, calDate, selDate, prevFn, nextFn, clickFn, dotsFn) {
+  const wrap  = document.getElementById(containerId);
+  if (!wrap) return;
+  const y = calDate.getFullYear(), mo = calDate.getMonth();
+  const firstDay = new Date(y,mo,1).getDay();
+  const dim      = new Date(y,mo+1,0).getDate();
+  const today    = todayStr();
+  const offset   = (firstDay+6)%7;
+  const DOWS     = ['M','T','W','T','F','S','S'];
+  let h = `<div class="cal-wrap"><div class="cal-nav">
+    <div class="cal-month">${fmtMY(calDate)}</div>
+    <button class="btn-icon" onclick="${prevFn}()">&#8249;</button>
+    <button class="btn-icon" onclick="${nextFn}()">&#8250;</button>
+  </div><div class="cal-grid">
+    ${DOWS.map(d=>`<div class="cal-dow">${d}</div>`).join('')}`;
+  for (let i=0; i<offset; i++) {
+    const d = new Date(y,mo,-(offset-i-1)).getDate();
+    h += `<div class="cal-day other-m"><span class="dn">${d}</span></div>`;
+  }
+  for (let d=1; d<=dim; d++) {
+    const ds     = `${y}-${pad(mo+1)}-${pad(d)}`;
+    const isToday = ds===today, isSel = ds===selDate;
+    const dots   = dotsFn(ds);
+    let cls = 'cal-day'; if(isToday) cls+=' today'; if(isSel) cls+=' selected';
+    h += `<div class="${cls}" onclick="${clickFn}('${ds}')">
+      <span class="dn">${d}</span>
+      ${dots.length?`<div class="cdots">${dots.slice(0,6).map(c=>`<div class="cdot" style="background:${c}"></div>`).join('')}</div>`:''}
+    </div>`;
+  }
+  const trail = (7-(offset+dim)%7)%7;
+  for (let i=1; i<=trail; i++) h += `<div class="cal-day other-m"><span class="dn">${i}</span></div>`;
+  h += `</div></div>`;
+  wrap.innerHTML = h;
+}
+
+// ── Admin calendar ──
+function adminPrev() { adminCalDate = new Date(adminCalDate.getFullYear(), adminCalDate.getMonth()-1, 1); renderAdminCal(); }
+function adminNext() { adminCalDate = new Date(adminCalDate.getFullYear(), adminCalDate.getMonth()+1, 1); renderAdminCal(); }
+
+function adminDotsFn(ds) {
+  const gf = document.getElementById('calGroupFilter')?.value || 'all';
+  return slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all')).map(s => {
+    if (getBooker(s.id)) return 'var(--purple)';
+    const g = getGroup(s.groupId); return g ? g.color : 'var(--orange)';
+  });
+}
+
+function renderAdminCal() { renderCalendar('adminCalWrap', adminCalDate, adminSelDate, 'adminPrev', 'adminNext', 'adminDayClick', adminDotsFn); }
+
+function adminDayClick(ds) {
+  adminSelDate = ds;
+  showSubForm(null);
+  renderAdminCal();
+  renderAdminDayPanel(ds);
+  document.getElementById('adminDayPanel').style.display = 'block';
+}
+
+function renderAdminDayPanel(ds) {
+  document.getElementById('adminDayTitle').textContent = fmtLong(ds);
+  const gf       = document.getElementById('calGroupFilter')?.value || 'all';
+  const daySlots = slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all'));
+  const el       = document.getElementById('adminDaySlots');
+  el.innerHTML   = !daySlots.length
+    ? `<div class="empty" style="padding:12px 0"><div class="empty-icon" style="font-size:16px">◇</div>No slots on this day.</div>`
+    : daySlots.map(s => {
+        const b = getBooker(s.id);
+        const g = getGroup(s.groupId);
+        return `<div class="asl-row card">
+          <div class="asl-time" style="color:${b?'var(--purple)':'var(--text)'}">${fmtTime(s.time)}</div>
+          <div class="asl-lbl">${esc(s.label)}</div>
+          ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
+          ${b?`<div class="booked-name">${esc(b.name)}</div>`:`<div class="avail-tag">AVAIL</div>`}
+          <button class="btn-rm" onclick="removeSlot('${s.id}')">×</button>
+        </div>`;
+      }).join('');
+}
+
+function renderAllSlotsList() {
+  const el = document.getElementById('allSlotsList');
+  if (!el) return;
+  if (!slots.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">◇</div>No slots yet.<br>Click a date to add slots.</div>`;
+    return;
+  }
+  el.innerHTML = groupByDate(slots).map(([d,slts]) => `
+    <div class="date-heading">${fmtShort(d)}</div>
+    ${slts.map(s => {
+      const b = getBooker(s.id); const g = getGroup(s.groupId);
+      return `<div class="asl-row card">
+        <div class="asl-time" style="color:${b?'var(--purple)':'var(--text)'};font-size:12px">${fmtTime(s.time)}</div>
+        ${s.label?`<div class="asl-lbl" style="font-size:11px">${esc(s.label)}</div>`:'<div style="flex:1"></div>'}
+        ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 7px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
+        ${b?`<div class="booked-name">${esc(b.name)}</div>`:`<div class="avail-tag">AVAIL</div>`}
+        <button class="btn-rm" onclick="removeSlot('${s.id}')">×</button>
+      </div>`;
+    }).join('')}
+  `).join('');
+}
+
+// ── Booking calendar ──
+function bookingPrev() { bookingCalDate = new Date(bookingCalDate.getFullYear(), bookingCalDate.getMonth()-1, 1); renderBookingCal(); }
+function bookingNext() { bookingCalDate = new Date(bookingCalDate.getFullYear(), bookingCalDate.getMonth()+1, 1); renderBookingCal(); }
+
+function bookingDotsFn(ds) {
+  const p = participants.find(x => x.id === currentPid); if (!p) return [];
+  return bookingSlots.filter(s => s.date===ds).map(s => {
+    if (p.bookedSlots?.includes(s.id)) return 'var(--purple)';
+    if (getBooker(s.id)) return 'var(--text-dim)';
+    return 'var(--green)';
+  });
+}
+
+function renderBookingCal() { renderCalendar('bookingCalWrap', bookingCalDate, bookingSelDate, 'bookingPrev', 'bookingNext', 'bookingDayClick', bookingDotsFn); }
+
+function bookingDayClick(ds) {
+  if (!bookingSlots.some(s => s.date===ds)) return;
+  bookingSelDate = ds;
+  renderBookingCal();
+  renderBookingDayPanel(ds);
+}
+
+function renderBookingDayPanel(ds) {
+  const p       = participants.find(x => x.id === currentPid); if (!p) return;
+  const remaining = p.sessionsAllocated - (p.bookedSlots?.length||0);
+  const daySlots  = bookingSlots.filter(s => s.date===ds);
+  const el = document.getElementById('bookingDayPanel');
+  if (!daySlots.length) { el.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots on this day.</div>`; return; }
+  el.innerHTML = `
+    <div style="margin-bottom:14px">
+      <div class="eyebrow" style="color:var(--text-mid);margin-bottom:3px">${fmtShort(ds)}</div>
+      <div style="font-size:13px;color:var(--text-mid)">${fmtLong(ds)}</div>
+    </div>
+    <div class="time-slots">
+      ${daySlots.map(s => {
+        const isMine  = p.bookedSlots?.includes(s.id);
+        const b       = getBooker(s.id);
+        const isTaken = b && !isMine;
+        const canBook = !isTaken && (isMine || remaining>0);
+        let cls = 'sc';
+        if (isMine)  cls += ' sc-mine';
+        if (isTaken) cls += ' sc-taken';
+        if (!canBook && !isMine) cls += ' sc-nomore';
+        return `<div class="${cls}" data-slot="${s.id}" onclick="toggleBook('${s.id}')">
+          <div class="sc-time">${fmtTime(s.time)}</div>
+          ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
+          <div class="sc-status" style="color:${isMine?'var(--purple)':isTaken?'var(--text-dim)':'var(--green)'}">
+            ${isMine?'● BOOKED':isTaken?'TAKEN':'AVAILABLE'}
+          </div>
+          ${isMine?'<div class="sc-hint">Tap to cancel</div>':''}
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function renderBookingHeader() {
+  const p = participants.find(x => x.id === currentPid); if (!p) return;
+  const remaining = p.sessionsAllocated - (p.bookedSlots?.length||0);
+  document.getElementById('bookingName').textContent = p.name;
+  const g = getGroup(p.groupId);
+  document.getElementById('bookingGroupChip').innerHTML = g
+    ? `<div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>` : '';
+  document.getElementById('bookingMsg').textContent = remaining > 0
+    ? `You have ${remaining} session${remaining>1?'s':''} to book. Pick a date on the calendar.`
+    : 'All sessions booked! Tap a booked slot to cancel if needed.';
+  document.getElementById('sessNum').textContent = remaining;
+  document.getElementById('sessNum').style.color = remaining===0 ? 'var(--green)' : 'var(--purple)';
+  document.getElementById('sessDots').innerHTML = Array.from({length: p.sessionsAllocated}).map((_,i) =>
+    `<div class="sess-dot${i<(p.bookedSlots?.length||0)?' on':''}"></div>`).join('');
+}
+
+async function toggleBook(sId) {
+  const p = participants.find(x => x.id === currentPid); if (!p) return;
+  const isMine    = p.bookedSlots?.includes(sId);
+  const b         = getBooker(sId);
+  const remaining = p.sessionsAllocated - (p.bookedSlots?.length||0);
+  if (!isMine && b)          { toast('Already taken', 'err'); return; }
+  if (!isMine && remaining<=0){ toast('No sessions remaining', 'err'); return; }
+  const newSlots = isMine
+    ? (p.bookedSlots||[]).filter(s => s!==sId)
+    : [...(p.bookedSlots||[]), sId];
+  try {
+    await db.collection('participants').doc(currentPid).update({ bookedSlots: newSlots });
+    toast(isMine ? 'Booking cancelled' : 'Session booked! ✓');
+    if (!isMine) setTimeout(() => {
+      const c = document.querySelector(`[data-slot="${sId}"]`);
+      if (c) { c.classList.add('sc-flash'); setTimeout(()=>c.classList.remove('sc-flash'),500); }
+    }, 50);
+  } catch(e) { toast('Error updating booking', 'err'); }
+}
+
+// ══════════════════════════════════════════════════════
+//  PARTICIPANT BOOKING ENTRY
+// ══════════════════════════════════════════════════════
+async function enterCode() {
+  const code = document.getElementById('codeInput').value.trim().toUpperCase();
+  const err  = document.getElementById('codeErr');
+  err.style.display = 'none';
+  if (!code) return;
+
+  try {
+    const doc = await db.collection('participants').doc(code).get();
+    if (!doc.exists) {
+      err.textContent = 'Code not recognised — check with your workshop host.';
+      err.style.display = 'block';
+      return;
+    }
+    currentPid = code;
+    const pData = { id: doc.id, ...doc.data() };
+    participants = [pData]; // bootstrap before listeners fire
+
+    // Real-time listener for this participant's document
+    unsubParticipant = db.collection('participants').doc(code).onSnapshot(snap => {
+      if (!snap.exists) return;
+      const updated = { id: snap.id, ...snap.data() };
+      const idx = participants.findIndex(x => x.id === code);
+      if (idx >= 0) participants[idx] = updated; else participants.push(updated);
+      renderBookingHeader();
+      renderBookingCal();
+      if (bookingSelDate) renderBookingDayPanel(bookingSelDate);
+    });
+
+    // Real-time listener for all slots, filtered to this participant's group
+    const gid = pData.groupId;
+    unsubBookingSlots = db.collection('slots').orderBy('date').orderBy('time').onSnapshot(snap => {
+      const all = snap.docs.map(d => ({id: d.id, ...d.data()}));
+      // Also keep a full participants mirror so getBooker() works in booking view
+      db.collection('participants').get().then(pSnap => {
+        participants = pSnap.docs.map(d => ({id:d.id,...d.data()}));
+        bookingSlots = all.filter(s => !gid || s.groupId==='all' || s.groupId===gid);
+        if (bookingSlots.length && !bookingCalDate) bookingCalDate = new Date(bookingSlots[0].date+'T12:00');
+        renderBookingCal();
+        if (bookingSelDate) renderBookingDayPanel(bookingSelDate);
+      });
+    });
+
+    bookingSlots = [];
+    renderBookingHeader();
+    renderBookingCal();
+    document.getElementById('bookingDayPanel').innerHTML = '<div class="empty"><div class="empty-icon">↑</div>Pick a date to see available slots</div>';
+    showScreen('booking');
+  } catch(e) {
+    err.textContent = 'Error loading booking. Please try again.';
+    err.style.display = 'block';
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  OVERVIEW
+// ══════════════════════════════════════════════════════
+function renderOverview() {
+  const total = participants.reduce((a,p) => a+(p.bookedSlots?.length||0), 0);
+  document.getElementById('statsGrid').innerHTML = [
+    {l:'Groups',v:groups.length,c:'var(--cyan)'},
+    {l:'Participants',v:participants.length,c:'var(--purple)'},
+    {l:'Total Slots',v:slots.length,c:'var(--orange)'},
+    {l:'Booked',v:total,c:'var(--green)'},
+  ].map(s=>`<div class="card stat-card"><div class="stat-n" style="color:${s.c}">${s.v}</div><div class="stat-l">${s.l}</div></div>`).join('');
+
+  const oc = document.getElementById('overviewContent');
+  if (!slots.length) { oc.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots yet.</div>`; return; }
+
+  let html = groups.map(g => {
+    const gSlots = slots.filter(s => s.groupId===g.id || s.groupId==='all');
+    if (!gSlots.length) return '';
+    return `<div style="margin-bottom:30px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      ${groupByDate(gSlots).map(([d,slts])=>`
+        <div class="date-heading">${fmtLong(d)}</div>
+        <div class="ov-mini-grid">${slts.map(s=>{
+          const b=getBooker(s.id);
+          return `<div class="card ov-mini" style="background:${b?'var(--purple-dim)':'var(--glass)'};border-color:${b?'rgba(167,139,250,.25)':'var(--border)'}">
+            <div class="ov-time">${fmtTime(s.time)}</div>
+            ${s.label?`<div class="ov-lbl">${esc(s.label)}</div>`:''}
+            <div class="ov-who" style="color:${b?'var(--purple)':'var(--green)'}">${b?esc(b.name):'Available'}</div>
+          </div>`;
+        }).join('')}</div>`).join('')}
+    </div>`;
+  }).join('');
+  oc.innerHTML = html || `<div class="empty"><div class="empty-icon">◇</div>No group data to show.</div>`;
+}
+
+// ══════════════════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════════════════
+function showResetConfirm() { document.getElementById('resetOverlay').style.display='flex'; }
+
+async function confirmReset() {
+  try {
+    for (const col of ['groups','participants','slots']) {
+      const snap  = await db.collection(col).get();
+      const batch = db.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      if (snap.docs.length) await batch.commit();
+    }
+    document.getElementById('resetOverlay').style.display = 'none';
+    toast('All data reset');
+  } catch(e) { toast('Error resetting data', 'err'); }
+}
+
+// ══════════════════════════════════════════════════════
+//  TAB SWITCHING
+// ══════════════════════════════════════════════════════
+function switchTab(name) {
+  ['groups','participants','slots','overview','settings'].forEach(t => {
+    document.getElementById('tab-'+t).classList.toggle('on', t===name);
+    document.getElementById('pane-'+t).style.display = t===name ? 'block' : 'none';
+  });
+  if (name==='overview')     renderOverview();
+  if (name==='slots')        { renderAdminCal(); renderAllSlotsList(); }
+  if (name==='participants') { renderGroupSelects(); renderParticipants(); }
+  if (name==='groups')       { renderColorPalette(); renderGroups(); }
+}
+
+function renderBadges() {
+  document.getElementById('badge-g').textContent = groups.length || '';
+  document.getElementById('badge-p').textContent = participants.length || '';
+  document.getElementById('badge-s').textContent = slots.length || '';
+}
+
+// ══════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════
+renderColorPalette();
+</script>
+</body>
+</html>
