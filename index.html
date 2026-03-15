@@ -830,8 +830,8 @@ function startAdminListeners() {
     renderBadges();
   }, err => console.error('participants listener:', err));
 
-  unsubSlots = db.collection('slots').orderBy('date').orderBy('time').onSnapshot(snap => {
-    slots = snap.docs.map(d => ({id: d.id, ...d.data()}));
+  unsubSlots = db.collection('slots').orderBy('date').onSnapshot(snap => {
+    slots = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => a.date===b.date ? (a.time||'').localeCompare(b.time||'') : 0);
     renderAdminCal();
     renderAllSlotsList();
     renderBadges();
@@ -1322,8 +1322,8 @@ async function enterCode() {
 
     // Real-time listener for all slots, filtered to this participant's group
     const gid = pData.groupId;
-    unsubBookingSlots = db.collection('slots').orderBy('date').orderBy('time').onSnapshot(snap => {
-      const all = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    unsubBookingSlots = db.collection('slots').orderBy('date').onSnapshot(snap => {
+      const all = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => a.date===b.date ? (a.time||'').localeCompare(b.time||'') : 0);
       // Also keep a full participants mirror so getBooker() works in booking view
       db.collection('participants').get().then(pSnap => {
         participants = pSnap.docs.map(d => ({id:d.id,...d.data()}));
