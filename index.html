@@ -266,6 +266,12 @@ input::placeholder{color:var(--text-dim)}
         <button class="btn-p" style="width:100%;padding:12px" onclick="enterCode()">Open My Calendar →</button>
       </div>
       <div class="card h-card anim anim2">
+        <div class="eyebrow" style="color:var(--green);margin-bottom:18px">SUPERVISOR</div>
+        <h2>Manage Participants</h2>
+        <p>Add and manage participants in your assigned groups. Protected by a supervisor PIN.</p>
+        <button class="btn-g" style="width:100%;padding:12px" onclick="goSupervisor()">Open Supervisor →</button>
+      </div>
+      <div class="card h-card anim anim2">
         <div class="eyebrow" style="color:var(--orange);margin-bottom:18px">HOST</div>
         <h2>Admin Dashboard</h2>
         <p>Manage workshop groups, participants, and time slots. Protected by your admin account.</p>
@@ -305,6 +311,69 @@ input::placeholder{color:var(--text-dim)}
       </div>
       <button class="btn-g btn-sm" style="width:100%;margin-top:18px" onclick="goHome()">← Back</button>
     </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ SUPERVISOR PIN ══════════════════════ -->
+<div id="sup-pin-screen" class="screen">
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px 16px">
+    <div class="card pin-box anim">
+      <div class="eyebrow" style="color:var(--green);margin-bottom:14px">SUPERVISOR ACCESS</div>
+      <h2 id="supPinTitle" style="font-size:22px;font-weight:800;margin-bottom:6px">Enter PIN</h2>
+      <p id="supPinSub" style="color:var(--text-mid);font-size:13px;line-height:1.6">Enter your 4-digit supervisor PIN.</p>
+      <div class="pin-dots" id="supPinDots">
+        <div class="pin-dot" id="spd0"></div>
+        <div class="pin-dot" id="spd1"></div>
+        <div class="pin-dot" id="spd2"></div>
+        <div class="pin-dot" id="spd3"></div>
+      </div>
+      <div id="supPinErr" class="field-err" style="display:none;margin-bottom:12px;text-align:center"></div>
+      <div class="pin-pad">
+        <button class="pp-btn" onclick="supPinKey('1')">1</button>
+        <button class="pp-btn" onclick="supPinKey('2')">2</button>
+        <button class="pp-btn" onclick="supPinKey('3')">3</button>
+        <button class="pp-btn" onclick="supPinKey('4')">4</button>
+        <button class="pp-btn" onclick="supPinKey('5')">5</button>
+        <button class="pp-btn" onclick="supPinKey('6')">6</button>
+        <button class="pp-btn" onclick="supPinKey('7')">7</button>
+        <button class="pp-btn" onclick="supPinKey('8')">8</button>
+        <button class="pp-btn" onclick="supPinKey('9')">9</button>
+        <div></div>
+        <button class="pp-btn" onclick="supPinKey('0')">0</button>
+        <button class="pp-btn del" onclick="supPinDel()">⌫</button>
+      </div>
+      <button class="btn-g btn-sm" style="width:100%;margin-top:18px" onclick="goHome()">← Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ SUPERVISOR DASHBOARD ══════════════════════ -->
+<div id="supervisor" class="screen">
+  <div class="sticky-hdr">
+    <div class="eyebrow" style="color:var(--green)">4E WORKSHOPS</div>
+    <div class="hdr-title">Supervisor</div>
+    <button class="btn-g btn-sm" onclick="doSupLogout()">🔒 Lock</button>
+  </div>
+  <div class="content" style="max-width:760px">
+    <div class="card" style="padding:20px;margin-bottom:18px">
+      <div class="eyebrow" style="color:var(--purple);margin-bottom:14px">ADD PARTICIPANT</div>
+      <div class="form-row">
+        <div class="inline-field" style="flex:1;min-width:150px">
+          <label>NAME</label>
+          <input type="text" id="supPName" placeholder="Participant name" onkeydown="if(event.key==='Enter')supAddParticipant()">
+        </div>
+        <div class="inline-field">
+          <label>SESSIONS</label>
+          <input type="number" id="supPSess" min="1" max="20" value="1" style="width:72px">
+        </div>
+        <div class="inline-field" style="min-width:160px">
+          <label>GROUP</label>
+          <select id="supPGroup"></select>
+        </div>
+        <button class="btn-p" onclick="supAddParticipant()">+ Add</button>
+      </div>
+    </div>
+    <div id="supParticipantsList"></div>
   </div>
 </div>
 
@@ -503,6 +572,12 @@ input::placeholder{color:var(--text-dim)}
           <button class="btn-g btn-sm" style="margin-top:14px" onclick="cancelChangePin()">Cancel</button>
         </div>
       </div>
+      <div class="card" style="padding:24px;max-width:440px;margin-bottom:20px">
+        <div class="eyebrow" style="color:var(--green);margin-bottom:16px">SUPERVISOR</div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Reset Supervisor PIN</h3>
+        <p style="color:var(--text-mid);font-size:13px;margin-bottom:18px;line-height:1.6">Clear the supervisor PIN so a new one can be created on next login.</p>
+        <button class="btn-g btn-sm" onclick="resetSupPin()">Reset Supervisor PIN</button>
+      </div>
       <div class="card" style="padding:24px;max-width:440px">
         <div class="eyebrow" style="color:var(--red);margin-bottom:16px">DANGER ZONE</div>
         <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Reset All Data</h3>
@@ -584,6 +659,7 @@ const db = firebase.firestore();
 //  PIN / AUTH STATE
 // ══════════════════════════════════════════════════════
 let adminAuthed = false; // true after correct PIN this session
+let supAuthed   = false; // true after correct supervisor PIN this session
 
 async function sha256(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -595,6 +671,8 @@ async function sha256(str) {
 // ══════════════════════════════════════════════════════
 let currentPid       = null;
 let pinBuffer        = '';   // digits being entered on PIN screen
+let supPinBuffer     = '';   // digits being entered on supervisor PIN screen
+let supEditingId     = null; // participant being edited in supervisor view
 let cpBuffer         = '';   // digits being entered in Change PIN flow
 let cpTempPin        = '';   // first entry for confirmation
 let cpStep           = 'new'; // 'new' | 'confirm'
@@ -615,6 +693,7 @@ let bookingSlots = []; // filtered for current participant
 // Listener handles
 let unsubGroups = null, unsubParticipants = null, unsubSlots = null;
 let unsubBookingSlots = null, unsubParticipant = null;
+let unsubSupGroups = null, unsubSupParticipants = null;
 
 const GROUP_COLORS = ['#22d3ee','#a78bfa','#fb923c','#34d399','#f472b6','#fbbf24','#f87171','#60a5fa','#e879f9','#a3e635'];
 
@@ -695,6 +774,192 @@ function doLogout() {
   adminAuthed = false;
   stopAdminListeners();
   goHome();
+}
+
+// ══════════════════════════════════════════════════════
+//  SUPERVISOR PIN & DASHBOARD
+// ══════════════════════════════════════════════════════
+async function goSupervisor() {
+  if (supAuthed) { startSupListeners(); renderSupShell(); showScreen('supervisor'); return; }
+  supPinBuffer = '';
+  const snap = await db.collection('config').doc('supervisor').get();
+  const hasPIN = snap.exists && snap.data().pinHash;
+  document.getElementById('supPinTitle').textContent = hasPIN ? 'Enter PIN' : 'Create PIN';
+  document.getElementById('supPinSub').textContent   = hasPIN ? 'Enter your 4-digit supervisor PIN.' : 'Set a 4-digit PIN for supervisor access.';
+  updateSupPinDots(0);
+  document.getElementById('supPinErr').style.display = 'none';
+  showScreen('sup-pin-screen');
+}
+
+function updateSupPinDots(count) {
+  for (let i=0;i<4;i++) {
+    const el = document.getElementById('spd'+i);
+    if (el) el.classList.toggle('filled', i < count);
+  }
+}
+
+async function supPinKey(d) {
+  if (supPinBuffer.length >= 4) return;
+  supPinBuffer += d;
+  updateSupPinDots(supPinBuffer.length);
+  document.getElementById('supPinErr').style.display = 'none';
+  if (supPinBuffer.length === 4) await processSupPIN();
+}
+
+function supPinDel() {
+  if (!supPinBuffer.length) return;
+  supPinBuffer = supPinBuffer.slice(0,-1);
+  updateSupPinDots(supPinBuffer.length);
+}
+
+async function processSupPIN() {
+  const snap = await db.collection('config').doc('supervisor').get();
+  const hasPIN = snap.exists && snap.data().pinHash;
+
+  if (!hasPIN) {
+    const hash = await sha256(supPinBuffer);
+    await db.collection('config').doc('supervisor').set({ pinHash: hash });
+    supAuthed = true;
+    startSupListeners();
+    renderSupShell();
+    showScreen('supervisor');
+    toast('Supervisor PIN set ✓');
+  } else {
+    const hash = await sha256(supPinBuffer);
+    if (hash === snap.data().pinHash) {
+      supAuthed = true;
+      startSupListeners();
+      renderSupShell();
+      showScreen('supervisor');
+    } else {
+      const dots = document.getElementById('supPinDots');
+      dots.classList.add('shake');
+      setTimeout(() => dots.classList.remove('shake'), 400);
+      supPinBuffer = '';
+      updateSupPinDots(0);
+      const err = document.getElementById('supPinErr');
+      err.textContent = 'Incorrect PIN';
+      err.style.display = 'block';
+    }
+  }
+}
+
+function doSupLogout() {
+  supAuthed = false;
+  stopSupListeners();
+  goHome();
+}
+
+function startSupListeners() {
+  if (unsubSupGroups) return;
+  unsubSupGroups = db.collection('groups').orderBy('name').onSnapshot(snap => {
+    groups = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    renderSupGroupSelect();
+    renderSupParticipants();
+  }, err => console.error('sup groups listener:', err));
+
+  unsubSupParticipants = db.collection('participants').orderBy('name').onSnapshot(snap => {
+    participants = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    if (supEditingId) return;
+    renderSupParticipants();
+  }, err => console.error('sup participants listener:', err));
+}
+
+function stopSupListeners() {
+  if (unsubSupGroups)       { unsubSupGroups();       unsubSupGroups       = null; }
+  if (unsubSupParticipants) { unsubSupParticipants(); unsubSupParticipants = null; }
+  groups = []; participants = [];
+}
+
+function renderSupShell() {
+  renderSupGroupSelect();
+  renderSupParticipants();
+}
+
+function renderSupGroupSelect() {
+  const el = document.getElementById('supPGroup');
+  if (el) el.innerHTML = `<option value="">No group</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+}
+
+async function supAddParticipant() {
+  const name = document.getElementById('supPName').value.trim();
+  const n    = parseInt(document.getElementById('supPSess').value) || 1;
+  const gid  = document.getElementById('supPGroup').value || null;
+  if (!name) return;
+  const id = uid();
+  try {
+    await db.collection('participants').doc(id).set({ name, sessionsAllocated: n, bookedSlots: [], groupId: gid });
+    toast(`${name} added ✓`);
+    document.getElementById('supPName').value = '';
+    document.getElementById('supPSess').value = 1;
+  } catch(e) { toast('Error adding participant', 'err'); }
+}
+
+async function supRemoveParticipant(id) {
+  try { await db.collection('participants').doc(id).delete(); toast('Removed'); }
+  catch(e) { toast('Error removing participant', 'err'); }
+}
+
+function supStartEdit(id) { supEditingId = id; renderSupParticipants(); }
+function supCancelEdit()  { supEditingId = null; renderSupParticipants(); }
+
+async function supSaveEdit(id) {
+  const v = parseInt(document.getElementById('supEditVal_'+id).value) || 1;
+  try {
+    await db.collection('participants').doc(id).update({ sessionsAllocated: v });
+    supEditingId = null; toast('Updated ✓');
+  } catch(e) { toast('Error saving', 'err'); }
+}
+
+function renderSupParticipants() {
+  const el = document.getElementById('supParticipantsList');
+  if (!el) return;
+  if (participants.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">◇</div>No participants yet — add one above.</div>`;
+    return;
+  }
+  const byGroup = {};
+  participants.forEach(p => { const k = p.groupId || '__none'; if (!byGroup[k]) byGroup[k]=[]; byGroup[k].push(p); });
+  let html = '';
+  groups.forEach(g => {
+    const ps = byGroup[g.id] || [];
+    if (!ps.length) return;
+    html += `<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px">
+      <div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>
+      <div style="flex:1;height:1px;background:var(--border)"></div></div>`;
+    html += ps.map(p => supParticipantRow(p, g.color)).join('');
+  });
+  if (byGroup['__none']?.length) {
+    html += `<div style="margin:16px 0 8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:2px">UNGROUPED</div>`;
+    html += byGroup['__none'].map(p => supParticipantRow(p, 'var(--text-dim)')).join('');
+  }
+  el.innerHTML = html;
+}
+
+function supParticipantRow(p, color) {
+  const pct = Math.min(100, ((p.bookedSlots?.length||0) / p.sessionsAllocated) * 100);
+  const full = pct >= 100;
+  const isEd = supEditingId === p.id;
+  return `<div class="card p-row">
+    <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${esc(p.name[0].toUpperCase())}</div>
+    <div class="p-info">
+      <div class="p-name">${esc(p.name)}</div>
+      <div class="prog-wrap">
+        <div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>
+        <span class="p-stat">${p.bookedSlots?.length||0}/${p.sessionsAllocated}</span>
+        ${full?'<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px">FULL</span>':''}
+      </div>
+    </div>
+    ${isEd
+      ? `<div style="display:flex;gap:6px;align-items:center">
+           <input type="number" id="supEditVal_${p.id}" min="1" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px">
+           <button class="btn-p btn-sm" onclick="supSaveEdit('${p.id}')">Save</button>
+           <button class="btn-g btn-sm" onclick="supCancelEdit()">✕</button>
+         </div>`
+      : `<button class="btn-g btn-sm" onclick="supStartEdit('${p.id}')">Edit</button>`}
+    <div class="code-pill" onclick="copyCode('${p.id}')" title="Click to copy">${p.id}</div>
+    <button class="btn-rm" onclick="supRemoveParticipant('${p.id}')">×</button>
+  </div>`;
 }
 
 // ══════════════════════════════════════════════════════
@@ -1386,6 +1651,14 @@ function renderOverview() {
 // ══════════════════════════════════════════════════════
 //  SETTINGS
 // ══════════════════════════════════════════════════════
+async function resetSupPin() {
+  try {
+    await db.collection('config').doc('supervisor').delete();
+    supAuthed = false;
+    toast('Supervisor PIN cleared — they can set a new one on next login');
+  } catch(e) { toast('Error resetting supervisor PIN', 'err'); }
+}
+
 function showResetConfirm() { document.getElementById('resetOverlay').style.display='flex'; }
 
 async function confirmReset() {
