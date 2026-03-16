@@ -354,58 +354,65 @@ input::placeholder{color:var(--text-dim)}
     <img src="logo_WHT.png" alt="4E" style="width:28px;height:28px;object-fit:contain;opacity:.7">
     <div class="eyebrow" style="color:var(--green)">4E WORKSHOPS</div>
     <div class="hdr-title">Supervisor</div>
+    <div class="tabs-wrap">
+      <button class="tab-btn on" id="sup-tab-participants" onclick="switchSupTab('participants')">Participants</button>
+      <button class="tab-btn" id="sup-tab-calendar" onclick="switchSupTab('calendar')">Calendar</button>
+      <button class="tab-btn" id="sup-tab-overview" onclick="switchSupTab('overview')">Overview</button>
+    </div>
     <button class="btn-g btn-sm" onclick="doSupLogout()">🔒 Lock</button>
   </div>
-  <div class="content" style="max-width:860px">
-    <div class="card" style="padding:20px;margin-bottom:18px">
-      <div class="eyebrow" style="color:var(--purple);margin-bottom:14px">ADD PARTICIPANT</div>
-      <div class="form-row">
-        <div class="inline-field" style="flex:1;min-width:150px">
-          <label>NAME</label>
-          <input type="text" id="supPName" placeholder="Participant name" onkeydown="if(event.key==='Enter')supAddParticipant()">
+  <div class="content" style="max-width:960px">
+
+    <!-- SUP: PARTICIPANTS -->
+    <div id="sup-pane-participants">
+      <div class="card" style="padding:20px;margin-bottom:18px">
+        <div class="eyebrow" style="color:var(--purple);margin-bottom:14px">ADD PARTICIPANT</div>
+        <div class="form-row">
+          <div class="inline-field" style="flex:1;min-width:150px">
+            <label>NAME</label>
+            <input type="text" id="supPName" placeholder="Participant name" onkeydown="if(event.key==='Enter')supAddParticipant()">
+          </div>
+          <div class="inline-field" style="flex:1;min-width:180px">
+            <label>EMAIL <span style="font-size:8px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL)</span></label>
+            <input type="email" id="supPEmail" placeholder="email@example.com">
+          </div>
+          <div class="inline-field">
+            <label>SESSIONS</label>
+            <input type="number" id="supPSess" min="1" max="20" value="1" style="width:72px">
+          </div>
+          <div class="inline-field" style="min-width:160px">
+            <label>GROUP</label>
+            <select id="supPGroup"></select>
+          </div>
+          <button class="btn-p" onclick="supAddParticipant()">+ Add</button>
         </div>
-        <div class="inline-field" style="flex:1;min-width:180px">
-          <label>EMAIL <span style="font-size:8px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL)</span></label>
-          <input type="email" id="supPEmail" placeholder="email@example.com">
+      </div>
+      <div id="supParticipantsList"></div>
+    </div>
+
+    <!-- SUP: CALENDAR & SLOT ASSIGNMENT -->
+    <div id="sup-pane-calendar" style="display:none">
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start">
+        <div class="cal-col card" style="padding:22px">
+          <div class="eyebrow" style="color:var(--orange);margin-bottom:14px">SLOT CALENDAR</div>
+          <div id="supCalWrap"></div>
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--text-dim);font-family:var(--mono)">
+            <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:var(--green)"></div>Available</div>
+            <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:var(--purple)"></div>Booked</div>
+          </div>
         </div>
-        <div class="inline-field">
-          <label>SESSIONS</label>
-          <input type="number" id="supPSess" min="1" max="20" value="1" style="width:72px">
+        <div>
+          <div id="supDayPanel"><div class="empty"><div class="empty-icon">↑</div>Pick a date to see slots and assign participants</div></div>
         </div>
-        <div class="inline-field" style="min-width:160px">
-          <label>GROUP</label>
-          <select id="supPGroup"></select>
-        </div>
-        <button class="btn-p" onclick="supAddParticipant()">+ Add</button>
       </div>
     </div>
-    <div id="supParticipantsList"></div>
-    <div class="divider" style="margin:24px 0"></div>
-    <div class="card" style="padding:20px">
-      <div class="eyebrow" style="color:var(--orange);margin-bottom:14px">ASSIGN SLOTS</div>
-      <p style="color:var(--text-mid);font-size:12px;margin-bottom:14px">Select a participant, then pick an available slot to book for them.</p>
-      <div class="form-row" style="margin-bottom:14px">
-        <div class="inline-field" style="flex:1;min-width:180px">
-          <label>PARTICIPANT</label>
-          <select id="supAssignPart"></select>
-        </div>
-        <div class="inline-field" style="min-width:150px">
-          <label>DATE</label>
-          <input type="date" id="supAssignDate" onchange="renderSupSlotPicker()">
-        </div>
-        <div class="inline-field" style="flex:1;min-width:140px">
-          <label>AVAILABLE SLOT</label>
-          <select id="supAssignSlot"></select>
-        </div>
-        <div class="inline-field" style="align-items:flex-end">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap">
-            <input type="checkbox" id="supSendCal" style="width:auto;accent-color:var(--purple)"> <span style="font-size:10px;color:var(--text-mid);letter-spacing:1px">📅 DOWNLOAD .ICS</span>
-          </label>
-        </div>
-        <button class="btn-p" onclick="supAssignSlot()">Assign</button>
-      </div>
-      <div id="supAssignedList"></div>
+
+    <!-- SUP: OVERVIEW -->
+    <div id="sup-pane-overview" style="display:none">
+      <div class="stats-grid" id="supStatsGrid"></div>
+      <div id="supOverviewContent"></div>
     </div>
+
   </div>
 </div>
 
@@ -1056,13 +1063,28 @@ function stopSupListeners() {
   groups = []; participants = []; supSlots = [];
 }
 
+let supCalDate = new Date();
+let supSelDate = null;
+let supAssignPid = null; // participant selected for assignment in day panel
+
+function switchSupTab(name) {
+  ['participants','calendar','overview'].forEach(t => {
+    document.getElementById('sup-tab-'+t).classList.toggle('on', t===name);
+    document.getElementById('sup-pane-'+t).style.display = t===name ? 'block' : 'none';
+  });
+  if (name==='calendar')  { renderSupCal(); }
+  if (name==='overview')  { renderSupOverview(); }
+  if (name==='participants') { renderSupParticipants(); }
+}
+
 function renderSupShell() {
   // Show group name in header
   const g = groups.find(x => x.id === supGroupId);
   const titleEl = document.querySelector('#supervisor .hdr-title');
-  if (titleEl && g) titleEl.textContent = g.name + ' — Supervisor';
+  if (titleEl && g) titleEl.textContent = g.name;
   renderSupGroupSelect();
   renderSupParticipants();
+  renderSupAssignSelects();
 }
 
 function renderSupGroupSelect() {
@@ -1104,9 +1126,14 @@ function supStartEdit(id) { supEditingId = id; renderSupParticipants(); }
 function supCancelEdit()  { supEditingId = null; renderSupParticipants(); }
 
 async function supSaveEdit(id) {
-  const v = parseInt(document.getElementById('supEditVal_'+id).value) || 1;
+  const name  = document.getElementById('supEditName_'+id).value.trim();
+  const email = document.getElementById('supEditEmail_'+id).value.trim();
+  const v     = parseInt(document.getElementById('supEditVal_'+id).value) || 1;
+  if (!name) { toast('Name is required', 'err'); return; }
+  const update = { name, sessionsAllocated: v };
+  if (email) update.email = email; else update.email = firebase.firestore.FieldValue.delete();
   try {
-    await db.collection('participants').doc(id).update({ sessionsAllocated: v });
+    await db.collection('participants').doc(id).update(update);
     supEditingId = null; toast('Updated ✓');
   } catch(e) { toast('Error saving', 'err'); }
 }
@@ -1140,7 +1167,7 @@ function supParticipantRow(p, color) {
   return `<div class="card p-row">
     <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${esc(p.name[0].toUpperCase())}</div>
     <div class="p-info">
-      <div class="p-name">${esc(p.name)}</div>
+      <div class="p-name">${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
       <div class="prog-wrap">
         <div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>
         <span class="p-stat">${p.bookedSlots?.length||0}/${p.sessionsAllocated}</span>
@@ -1148,8 +1175,10 @@ function supParticipantRow(p, color) {
       </div>
     </div>
     ${isEd
-      ? `<div style="display:flex;gap:6px;align-items:center">
-           <input type="number" id="supEditVal_${p.id}" min="1" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px">
+      ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+           <input type="text" id="supEditName_${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:140px;padding:6px 10px">
+           <input type="email" id="supEditEmail_${p.id}" value="${esc(p.email||'')}" placeholder="Email" style="width:180px;padding:6px 10px">
+           <input type="number" id="supEditVal_${p.id}" min="1" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px" title="Sessions">
            <button class="btn-p btn-sm" onclick="supSaveEdit('${p.id}')">Save</button>
            <button class="btn-g btn-sm" onclick="supCancelEdit()">✕</button>
          </div>`
@@ -1160,85 +1189,108 @@ function supParticipantRow(p, color) {
 }
 
 // ══════════════════════════════════════════════════════
-//  SUPERVISOR — SLOT ASSIGNMENT
+//  SUPERVISOR — CALENDAR & SLOT ASSIGNMENT
 // ══════════════════════════════════════════════════════
 let supSlots = []; // slots visible to supervisor
 let unsubSupSlots = null;
 
 function renderSupAssignSelects() {
-  // Participant dropdown — scoped to supervisor's group
-  const partEl = document.getElementById('supAssignPart');
-  if (!partEl) return;
+  // called when participants change — refresh day panel if open
+  if (supSelDate) renderSupDayPanel(supSelDate);
+}
+
+// ── Supervisor calendar ──
+function supCalPrev() { supCalDate = new Date(supCalDate.getFullYear(), supCalDate.getMonth()-1, 1); renderSupCal(); }
+function supCalNext() { supCalDate = new Date(supCalDate.getFullYear(), supCalDate.getMonth()+1, 1); renderSupCal(); }
+
+function supDotsFn(ds) {
+  return supSlots.filter(s => s.date===ds).map(s => {
+    if (getBooker(s.id)) return 'var(--purple)';
+    return 'var(--green)';
+  });
+}
+
+function renderSupCal() { renderCalendar('supCalWrap', supCalDate, supSelDate, 'supCalPrev', 'supCalNext', 'supDayClick', supDotsFn); }
+
+function supDayClick(ds) {
+  supSelDate = ds;
+  supAssignPid = null;
+  renderSupCal();
+  renderSupDayPanel(ds);
+}
+
+function renderSupDayPanel(ds) {
+  const el = document.getElementById('supDayPanel');
+  if (!el) return;
+  const daySlots = supSlots.filter(s => s.date===ds);
   const scoped = supGroupId ? participants.filter(p => p.groupId === supGroupId) : participants;
-  partEl.innerHTML = '<option value="">Select…</option>' + scoped.map(p => {
+
+  if (!daySlots.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">◇</div>No slots on this day.</div>`;
+    return;
+  }
+
+  // Participant selector for assignment
+  const partOptions = scoped.filter(p => {
     const rem = p.sessionsAllocated - (p.bookedSlots?.length||0);
-    return `<option value="${p.id}" ${rem<=0?'disabled':''}>${esc(p.name)} (${rem} left)</option>`;
+    return rem > 0;
+  });
+
+  let html = `<div style="margin-bottom:16px">
+    <div class="eyebrow" style="color:var(--text-mid);margin-bottom:3px">${fmtShort(ds)}</div>
+    <div style="font-size:13px;color:var(--text-mid);margin-bottom:14px">${fmtLong(ds)}</div>
+    ${partOptions.length ? `<div class="card" style="padding:12px 16px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div class="eyebrow" style="color:var(--purple);white-space:nowrap">ASSIGN TO</div>
+        <select id="supDayAssignPart" style="flex:1;min-width:140px" onchange="supAssignPid=this.value">
+          <option value="">Select participant…</option>
+          ${partOptions.map(p => {
+            const rem = p.sessionsAllocated - (p.bookedSlots?.length||0);
+            return `<option value="${p.id}" ${p.id===supAssignPid?'selected':''}>${esc(p.name)} (${rem} left)</option>`;
+          }).join('')}
+        </select>
+      </div>
+    </div>` : ''}
+  </div>
+  <div class="time-slots">`;
+
+  html += daySlots.map(s => {
+    const b = getBooker(s.id);
+    const isTaken = !!b;
+    let cls = 'sc';
+    if (isTaken) cls += ' sc-mine';
+    return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}" ${!isTaken?`onclick="supQuickAssign('${s.id}')"`:''}>
+      <div class="sc-time">${fmtTime(s.time)}</div>
+      ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
+      ${s.meetingLink?'<div style="font-size:10px;color:var(--cyan);margin-bottom:4px">🔗 Meeting link</div>':''}
+      <div class="sc-status" style="color:${isTaken?'var(--purple)':'var(--green)'}">
+        ${isTaken?'● '+esc(b.name):'AVAILABLE'}
+      </div>
+      ${isTaken?`<div style="display:flex;gap:6px;margin-top:6px" onclick="event.stopPropagation()">
+        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(supSlots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
+        <button class="btn-rm" style="font-size:14px" onclick="supUnassignSlot('${b.id}','${s.id}')" title="Unassign">×</button>
+      </div>`:`<div class="sc-hint">Click to assign</div>`}
+    </div>`;
   }).join('');
-  renderSupSlotPicker();
-  renderSupAssignedList();
+
+  html += '</div>';
+  el.innerHTML = html;
 }
 
-function renderSupSlotPicker() {
-  const slotEl = document.getElementById('supAssignSlot');
-  if (!slotEl) return;
-  const dateVal = document.getElementById('supAssignDate').value;
-  if (!dateVal) { slotEl.innerHTML = '<option value="">Pick a date first</option>'; return; }
-  // Show available (unbooked) slots for this date in this group
-  const avail = supSlots.filter(s => s.date === dateVal && !getBooker(s.id));
-  if (!avail.length) { slotEl.innerHTML = '<option value="">No available slots</option>'; return; }
-  slotEl.innerHTML = avail.map(s =>
-    `<option value="${s.id}">${fmtTime(s.time)}${s.label?' — '+esc(s.label):''}${s.meetingLink?' 🔗':''}</option>`
-  ).join('');
-}
-
-async function supAssignSlot() {
-  const pid = document.getElementById('supAssignPart').value;
-  const sid = document.getElementById('supAssignSlot').value;
-  if (!pid) { toast('Select a participant', 'err'); return; }
-  if (!sid) { toast('Select a slot', 'err'); return; }
-  const p = participants.find(x => x.id === pid);
+async function supQuickAssign(sid) {
+  if (!supAssignPid) { toast('Select a participant first', 'err'); return; }
+  const p = participants.find(x => x.id === supAssignPid);
   if (!p) return;
   const rem = p.sessionsAllocated - (p.bookedSlots?.length||0);
   if (rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
-  if (p.bookedSlots?.includes(sid)) { toast('Already booked this slot', 'err'); return; }
+  if (p.bookedSlots?.includes(sid)) { toast('Already booked', 'err'); return; }
+  if (getBooker(sid)) { toast('Slot already taken', 'err'); return; }
   try {
-    await db.collection('participants').doc(pid).update({
+    await db.collection('participants').doc(supAssignPid).update({
       bookedSlots: [...(p.bookedSlots||[]), sid]
     });
-    toast(`Slot assigned to ${p.name} ✓`);
-    // Download .ics if checked
-    if (document.getElementById('supSendCal').checked) {
-      const slot = supSlots.find(s => s.id === sid);
-      if (slot) downloadICS(slot, p.name);
-    }
+    toast(`Assigned to ${p.name} ✓`);
   } catch(e) { toast('Error assigning slot', 'err'); }
-}
-
-function renderSupAssignedList() {
-  const el = document.getElementById('supAssignedList');
-  if (!el) return;
-  const scoped = supGroupId ? participants.filter(p => p.groupId === supGroupId) : participants;
-  const booked = [];
-  scoped.forEach(p => {
-    (p.bookedSlots||[]).forEach(sid => {
-      const s = supSlots.find(x => x.id === sid);
-      if (s) booked.push({ participant: p, slot: s });
-    });
-  });
-  if (!booked.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text-dim);margin-top:12px">No slots assigned yet.</div>'; return; }
-  booked.sort((a,b) => a.slot.date===b.slot.date ? (a.slot.time||'').localeCompare(b.slot.time||'') : a.slot.date.localeCompare(b.slot.date));
-  el.innerHTML = '<div style="margin-top:14px"><div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">ASSIGNED BOOKINGS</div>' +
-    booked.map(({participant:p, slot:s}) =>
-      `<div class="asl-row card" style="margin-bottom:4px">
-        <div class="asl-time">${fmtTime(s.time)}</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--text-mid)">${fmtShort(s.date)}</div>
-        <div class="booked-name">${esc(p.name)}</div>
-        ${s.meetingLink?'<span style="font-size:11px" title="Has meeting link">🔗</span>':''}
-        <div style="flex:1"></div>
-        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(supSlots.find(x=>x.id==='${s.id}'),'${esc(p.name)}')">📅 .ics</button>
-        <button class="btn-rm" onclick="supUnassignSlot('${p.id}','${s.id}')" title="Unassign">×</button>
-      </div>`
-    ).join('') + '</div>';
 }
 
 async function supUnassignSlot(pid, sid) {
@@ -1250,6 +1302,32 @@ async function supUnassignSlot(pid, sid) {
     });
     toast('Slot unassigned');
   } catch(e) { toast('Error unassigning slot', 'err'); }
+}
+
+function renderSupOverview() {
+  const scoped = supGroupId ? participants.filter(p => p.groupId === supGroupId) : participants;
+  const totalBooked = scoped.reduce((a,p) => a+(p.bookedSlots?.length||0), 0);
+  const totalAlloc  = scoped.reduce((a,p) => a+p.sessionsAllocated, 0);
+  document.getElementById('supStatsGrid').innerHTML = [
+    {l:'Participants',v:scoped.length,c:'var(--purple)'},
+    {l:'Available Slots',v:supSlots.filter(s=>!getBooker(s.id)).length,c:'var(--green)'},
+    {l:'Booked',v:totalBooked,c:'var(--orange)'},
+    {l:'Sessions Allocated',v:totalAlloc,c:'var(--cyan)'},
+  ].map(s=>`<div class="card stat-card"><div class="stat-n" style="color:${s.c}">${s.v}</div><div class="stat-l">${s.l}</div></div>`).join('');
+
+  const oc = document.getElementById('supOverviewContent');
+  if (!supSlots.length) { oc.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots available.</div>`; return; }
+  oc.innerHTML = groupByDate(supSlots).map(([d,slts])=>`
+    <div class="date-heading">${fmtLong(d)}</div>
+    <div class="ov-mini-grid">${slts.map(s=>{
+      const b=getBooker(s.id);
+      return `<div class="card ov-mini" style="background:${b?'var(--purple-dim)':'var(--glass)'};border-color:${b?'rgba(167,139,250,.25)':'var(--border)'}">
+        <div class="ov-time">${fmtTime(s.time)}</div>
+        ${s.label?`<div class="ov-lbl">${esc(s.label)}</div>`:''}
+        <div class="ov-who" style="color:${b?'var(--purple)':'var(--green)'}">${b?esc(b.name):'Available'}</div>
+        ${s.meetingLink?'<span style="font-size:10px">🔗</span>':''}
+      </div>`;
+    }).join('')}</div>`).join('');
 }
 
 // ══════════════════════════════════════════════════════
@@ -1509,9 +1587,14 @@ function startEdit(id) { editingId = id; renderParticipants(); }
 function cancelEdit()  { editingId = null; renderParticipants(); }
 
 async function saveEdit(id) {
-  const v = parseInt(document.getElementById('editVal_'+id).value) || 1;
+  const name  = document.getElementById('editName_'+id).value.trim();
+  const email = document.getElementById('editEmail_'+id).value.trim();
+  const v     = parseInt(document.getElementById('editVal_'+id).value) || 1;
+  if (!name) { toast('Name is required', 'err'); return; }
+  const update = { name, sessionsAllocated: v };
+  if (email) update.email = email; else update.email = firebase.firestore.FieldValue.delete();
   try {
-    await db.collection('participants').doc(id).update({ sessionsAllocated: v });
+    await db.collection('participants').doc(id).update(update);
     editingId = null; toast('Updated ✓');
   } catch(e) { toast('Error saving', 'err'); }
 }
@@ -1561,8 +1644,10 @@ function participantRow(p, color) {
       </div>
     </div>
     ${isEd
-      ? `<div style="display:flex;gap:6px;align-items:center">
-           <input type="number" id="editVal_${p.id}" min="1" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px">
+      ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+           <input type="text" id="editName_${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:140px;padding:6px 10px">
+           <input type="email" id="editEmail_${p.id}" value="${esc(p.email||'')}" placeholder="Email" style="width:180px;padding:6px 10px">
+           <input type="number" id="editVal_${p.id}" min="1" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px" title="Sessions">
            <button class="btn-p btn-sm" onclick="saveEdit('${p.id}')">Save</button>
            <button class="btn-g btn-sm" onclick="cancelEdit()">✕</button>
          </div>`
