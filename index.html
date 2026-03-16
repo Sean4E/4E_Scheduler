@@ -252,6 +252,7 @@ input::placeholder{color:var(--text-dim)}
 <div id="home" class="screen active">
   <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px">
     <div class="h-hero anim">
+      <img src="logo_WHT.png" alt="4E" style="width:48px;height:48px;object-fit:contain;margin-bottom:10px;opacity:.85">
       <div class="eyebrow" style="color:var(--cyan);margin-bottom:14px">4E VIRTUAL DESIGN</div>
       <h1>Workshop <span>Scheduler</span></h1>
       <p>Book your 1-to-1 sessions with ease</p>
@@ -350,6 +351,7 @@ input::placeholder{color:var(--text-dim)}
 <!-- ══════════════════════ SUPERVISOR DASHBOARD ══════════════════════ -->
 <div id="supervisor" class="screen">
   <div class="sticky-hdr">
+    <img src="logo_WHT.png" alt="4E" style="width:28px;height:28px;object-fit:contain;opacity:.7">
     <div class="eyebrow" style="color:var(--green)">4E WORKSHOPS</div>
     <div class="hdr-title">Supervisor</div>
     <button class="btn-g btn-sm" onclick="doSupLogout()">🔒 Lock</button>
@@ -380,6 +382,7 @@ input::placeholder{color:var(--text-dim)}
 <!-- ══════════════════════ ADMIN ══════════════════════ -->
 <div id="admin" class="screen">
   <div class="sticky-hdr">
+    <img src="logo_WHT.png" alt="4E" style="width:28px;height:28px;object-fit:contain;opacity:.7">
     <div class="eyebrow" style="color:var(--orange)">4E WORKSHOPS</div>
     <div class="hdr-title">Admin</div>
     <div class="tabs-wrap">
@@ -406,6 +409,12 @@ input::placeholder{color:var(--text-dim)}
         <div style="margin-bottom:14px">
           <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">GROUP COLOUR</div>
           <div class="color-palette" id="colorPalette"></div>
+        </div>
+        <div style="margin-bottom:14px">
+          <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">SUPERVISOR PIN <span style="font-size:9px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL)</span></div>
+          <div class="form-row">
+            <input type="text" id="gSupPin" placeholder="4-digit PIN for supervisor access" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="width:200px;letter-spacing:4px;font-size:14px" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+          </div>
         </div>
         <button class="btn-p" onclick="addGroup()">+ Create Group</button>
       </div>
@@ -461,6 +470,17 @@ input::placeholder{color:var(--text-dim)}
                 <div class="inline-field">
                   <label>TIME</label>
                   <input type="time" id="sTime" style="width:130px">
+                </div>
+                <div class="inline-field">
+                  <label>DURATION</label>
+                  <select id="sDur" style="width:110px">
+                    <option value="15">15 min</option>
+                    <option value="20">20 min</option>
+                    <option value="30" selected>30 min</option>
+                    <option value="45">45 min</option>
+                    <option value="60">60 min</option>
+                    <option value="90">90 min</option>
+                  </select>
                 </div>
                 <div class="inline-field" style="flex:1;min-width:110px">
                   <label>LABEL (optional)</label>
@@ -533,6 +553,10 @@ input::placeholder{color:var(--text-dim)}
 
     <!-- OVERVIEW -->
     <div id="pane-overview" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <div style="flex:1"></div>
+        <button class="btn-g btn-sm" onclick="exportCSV()" style="display:flex;align-items:center;gap:6px">📊 Export CSV</button>
+      </div>
       <div class="stats-grid" id="statsGrid"></div>
       <div id="overviewContent"></div>
     </div>
@@ -573,10 +597,9 @@ input::placeholder{color:var(--text-dim)}
         </div>
       </div>
       <div class="card" style="padding:24px;max-width:440px;margin-bottom:20px">
-        <div class="eyebrow" style="color:var(--green);margin-bottom:16px">SUPERVISOR</div>
-        <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Reset Supervisor PIN</h3>
-        <p style="color:var(--text-mid);font-size:13px;margin-bottom:18px;line-height:1.6">Clear the supervisor PIN so a new one can be created on next login.</p>
-        <button class="btn-g btn-sm" onclick="resetSupPin()">Reset Supervisor PIN</button>
+        <div class="eyebrow" style="color:var(--green);margin-bottom:16px">SUPERVISORS</div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Per-Group Supervisor PINs</h3>
+        <p style="color:var(--text-mid);font-size:13px;margin-bottom:8px;line-height:1.6">Supervisor PINs are managed per group. Go to the <strong style="color:var(--cyan);cursor:pointer" onclick="switchTab('groups')">Groups</strong> tab to set or reset a supervisor PIN for each group.</p>
       </div>
       <div class="card" style="padding:24px;max-width:440px">
         <div class="eyebrow" style="color:var(--red);margin-bottom:16px">DANGER ZONE</div>
@@ -592,6 +615,7 @@ input::placeholder{color:var(--text-dim)}
 <div id="booking" class="screen">
   <div class="sticky-hdr">
     <button class="btn-g btn-sm" onclick="goHome()">← Back</button>
+    <img src="logo_WHT.png" alt="4E" style="width:28px;height:28px;object-fit:contain;opacity:.7">
     <div class="eyebrow" style="color:var(--cyan)">4E VIRTUAL DESIGN</div>
     <div style="flex:1"></div>
     <div class="card" style="display:flex;align-items:center;gap:12px;padding:8px 16px">
@@ -623,6 +647,23 @@ input::placeholder{color:var(--text-dim)}
         <div id="bookingDayPanel"><div class="empty"><div class="empty-icon">↑</div>Pick a date to see available slots</div></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Booking confirmation overlay -->
+<div id="bookingConfirm" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);align-items:center;justify-content:center">
+  <div class="card anim" style="padding:32px;max-width:400px;margin:16px;text-align:center">
+    <div style="font-size:32px;margin-bottom:12px">✓</div>
+    <h3 style="font-size:18px;font-weight:800;margin-bottom:6px;color:var(--green)">Session Booked!</h3>
+    <div id="confirmDetails" style="color:var(--text-mid);font-size:13px;margin-bottom:20px;line-height:1.65"></div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">
+      <button class="btn-p btn-sm" id="confirmICS" style="display:flex;align-items:center;gap:6px">📅 Download .ics</button>
+      <a id="confirmGCal" class="btn-g btn-sm" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;text-decoration:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2"/></svg>
+        Google Calendar
+      </a>
+    </div>
+    <button class="btn-g btn-sm" style="width:100%" onclick="document.getElementById('bookingConfirm').style.display='none'">Done</button>
   </div>
 </div>
 
@@ -696,6 +737,74 @@ let unsubBookingSlots = null, unsubParticipant = null;
 let unsubSupGroups = null, unsubSupParticipants = null;
 
 const GROUP_COLORS = ['#22d3ee','#a78bfa','#fb923c','#34d399','#f472b6','#fbbf24','#f87171','#60a5fa','#e879f9','#a3e635'];
+
+// ══════════════════════════════════════════════════════
+//  CALENDAR EXPORT HELPERS
+// ══════════════════════════════════════════════════════
+function slotToDateTimes(slot) {
+  const [h,m] = slot.time.split(':').map(Number);
+  const dur = slot.duration || 30;
+  const start = new Date(slot.date + 'T' + pad(h) + ':' + pad(m) + ':00');
+  const end   = new Date(start.getTime() + dur * 60000);
+  return { start, end, dur };
+}
+
+function toICSDate(d) {
+  return d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
+}
+
+function generateICS(slot, participantName) {
+  const { start, end } = slotToDateTimes(slot);
+  const g = getGroup(slot.groupId);
+  const summary = '4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : '');
+  const desc = (slot.label ? slot.label + '\\n' : '') + 'Booked by: ' + participantName;
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//4E Virtual Design//Workshop Scheduler//EN',
+    'BEGIN:VEVENT',
+    'DTSTART:' + toICSDate(start),
+    'DTEND:' + toICSDate(end),
+    'SUMMARY:' + summary,
+    'DESCRIPTION:' + desc,
+    'STATUS:CONFIRMED',
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+}
+
+function downloadICS(slot, participantName) {
+  const ics = generateICS(slot, participantName);
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = '4E_Session_' + slot.date + '_' + slot.time.replace(':','') + '.ics';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function googleCalURL(slot) {
+  const { start, end } = slotToDateTimes(slot);
+  const g = getGroup(slot.groupId);
+  const title = encodeURIComponent('4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : ''));
+  const details = encodeURIComponent(slot.label || '4E Virtual Design workshop session');
+  const dates = toICSDate(start) + '/' + toICSDate(end);
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}`;
+}
+
+function showBookingConfirmation(slot, participantName) {
+  const { start, dur } = slotToDateTimes(slot);
+  const g = getGroup(slot.groupId);
+  const dayStr = start.toLocaleDateString('en-IE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const timeStr = fmtTime(slot.time);
+  document.getElementById('confirmDetails').innerHTML =
+    `<strong style="color:var(--text)">${dayStr}</strong><br>${timeStr} · ${dur} minutes` +
+    (slot.label ? `<br><span style="color:var(--text-dim)">${esc(slot.label)}</span>` : '') +
+    (g && g.id !== 'all' ? `<br><span style="color:${g.color}">${esc(g.name)}</span>` : '');
+  document.getElementById('confirmICS').onclick = () => downloadICS(slot, participantName);
+  document.getElementById('confirmGCal').href = googleCalURL(slot);
+  document.getElementById('bookingConfirm').style.display = 'flex';
+}
 
 // ══════════════════════════════════════════════════════
 //  PIN FUNCTIONS
@@ -777,15 +886,15 @@ function doLogout() {
 }
 
 // ══════════════════════════════════════════════════════
-//  SUPERVISOR PIN & DASHBOARD
+//  SUPERVISOR PIN & DASHBOARD (per-group)
 // ══════════════════════════════════════════════════════
+let supGroupId = null; // which group this supervisor is scoped to
+
 async function goSupervisor() {
-  if (supAuthed) { startSupListeners(); renderSupShell(); showScreen('supervisor'); return; }
+  if (supAuthed && supGroupId) { startSupListeners(); renderSupShell(); showScreen('supervisor'); return; }
   supPinBuffer = '';
-  const snap = await db.collection('config').doc('supervisor').get();
-  const hasPIN = snap.exists && snap.data().pinHash;
-  document.getElementById('supPinTitle').textContent = hasPIN ? 'Enter PIN' : 'Create PIN';
-  document.getElementById('supPinSub').textContent   = hasPIN ? 'Enter your 4-digit supervisor PIN.' : 'Set a 4-digit PIN for supervisor access.';
+  document.getElementById('supPinTitle').textContent = 'Enter PIN';
+  document.getElementById('supPinSub').textContent   = 'Enter the 4-digit PIN provided by your workshop host.';
   updateSupPinDots(0);
   document.getElementById('supPinErr').style.display = 'none';
   showScreen('sup-pin-screen');
@@ -813,49 +922,63 @@ function supPinDel() {
 }
 
 async function processSupPIN() {
-  const snap = await db.collection('config').doc('supervisor').get();
-  const hasPIN = snap.exists && snap.data().pinHash;
+  const hash = await sha256(supPinBuffer);
+  // Check all groups for a matching supervisor PIN
+  const snap = await db.collection('groups').get();
+  const allGroups = snap.docs.map(d => ({id: d.id, ...d.data()}));
+  const match = allGroups.find(g => g.supervisorPinHash === hash);
 
-  if (!hasPIN) {
-    const hash = await sha256(supPinBuffer);
-    await db.collection('config').doc('supervisor').set({ pinHash: hash });
+  if (match) {
     supAuthed = true;
+    supGroupId = match.id;
+    groups = allGroups;
     startSupListeners();
     renderSupShell();
     showScreen('supervisor');
-    toast('Supervisor PIN set ✓');
+    toast(`Welcome, ${match.name} supervisor`);
   } else {
-    const hash = await sha256(supPinBuffer);
-    if (hash === snap.data().pinHash) {
-      supAuthed = true;
-      startSupListeners();
-      renderSupShell();
-      showScreen('supervisor');
-    } else {
-      const dots = document.getElementById('supPinDots');
-      dots.classList.add('shake');
-      setTimeout(() => dots.classList.remove('shake'), 400);
-      supPinBuffer = '';
-      updateSupPinDots(0);
-      const err = document.getElementById('supPinErr');
-      err.textContent = 'Incorrect PIN';
-      err.style.display = 'block';
-    }
+    const dots = document.getElementById('supPinDots');
+    dots.classList.add('shake');
+    setTimeout(() => dots.classList.remove('shake'), 400);
+    supPinBuffer = '';
+    updateSupPinDots(0);
+    const err = document.getElementById('supPinErr');
+    err.textContent = 'PIN not recognised — contact your workshop host.';
+    err.style.display = 'block';
   }
 }
 
 function doSupLogout() {
   supAuthed = false;
+  supGroupId = null;
   stopSupListeners();
   goHome();
+}
+
+// Admin functions for setting/resetting supervisor PINs per group
+async function setGroupSupPin(groupId) {
+  const pin = prompt('Set a 4-digit supervisor PIN for this group:');
+  if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) { if (pin !== null) toast('PIN must be exactly 4 digits', 'err'); return; }
+  try {
+    const hash = await sha256(pin);
+    await db.collection('groups').doc(groupId).update({ supervisorPinHash: hash });
+    toast('Supervisor PIN set ✓');
+  } catch(e) { toast('Error setting PIN', 'err'); }
+}
+
+async function resetGroupSupPin(groupId) {
+  if (!confirm('Remove the supervisor PIN for this group?')) return;
+  try {
+    await db.collection('groups').doc(groupId).update({ supervisorPinHash: firebase.firestore.FieldValue.delete() });
+    toast('Supervisor PIN removed');
+  } catch(e) { toast('Error removing PIN', 'err'); }
 }
 
 function startSupListeners() {
   if (unsubSupGroups) return;
   unsubSupGroups = db.collection('groups').orderBy('name').onSnapshot(snap => {
     groups = snap.docs.map(d => ({id: d.id, ...d.data()}));
-    renderSupGroupSelect();
-    renderSupParticipants();
+    renderSupShell();
   }, err => console.error('sup groups listener:', err));
 
   unsubSupParticipants = db.collection('participants').orderBy('name').onSnapshot(snap => {
@@ -872,19 +995,30 @@ function stopSupListeners() {
 }
 
 function renderSupShell() {
+  // Show group name in header
+  const g = groups.find(x => x.id === supGroupId);
+  const titleEl = document.querySelector('#supervisor .hdr-title');
+  if (titleEl && g) titleEl.textContent = g.name + ' — Supervisor';
   renderSupGroupSelect();
   renderSupParticipants();
 }
 
 function renderSupGroupSelect() {
   const el = document.getElementById('supPGroup');
-  if (el) el.innerHTML = `<option value="">No group</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  if (!el) return;
+  // Supervisor is scoped to their group — pre-select and lock it
+  const g = groups.find(x => x.id === supGroupId);
+  if (g) {
+    el.innerHTML = `<option value="${g.id}">${esc(g.name)}</option>`;
+  } else {
+    el.innerHTML = `<option value="">No group</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  }
 }
 
 async function supAddParticipant() {
   const name = document.getElementById('supPName').value.trim();
   const n    = parseInt(document.getElementById('supPSess').value) || 1;
-  const gid  = document.getElementById('supPGroup').value || null;
+  const gid  = supGroupId || document.getElementById('supPGroup').value || null;
   if (!name) return;
   const id = uid();
   try {
@@ -914,25 +1048,22 @@ async function supSaveEdit(id) {
 function renderSupParticipants() {
   const el = document.getElementById('supParticipantsList');
   if (!el) return;
-  if (participants.length === 0) {
+  // Filter to supervisor's group only
+  const scopedParticipants = supGroupId ? participants.filter(p => p.groupId === supGroupId) : participants;
+  if (scopedParticipants.length === 0) {
     el.innerHTML = `<div class="empty"><div class="empty-icon">◇</div>No participants yet — add one above.</div>`;
     return;
   }
-  const byGroup = {};
-  participants.forEach(p => { const k = p.groupId || '__none'; if (!byGroup[k]) byGroup[k]=[]; byGroup[k].push(p); });
+  const g = groups.find(x => x.id === supGroupId);
+  const color = g ? g.color : 'var(--text-dim)';
   let html = '';
-  groups.forEach(g => {
-    const ps = byGroup[g.id] || [];
-    if (!ps.length) return;
+  if (g) {
     html += `<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px">
       <div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">${scopedParticipants.length} participant${scopedParticipants.length!==1?'s':''}</div>
       <div style="flex:1;height:1px;background:var(--border)"></div></div>`;
-    html += ps.map(p => supParticipantRow(p, g.color)).join('');
-  });
-  if (byGroup['__none']?.length) {
-    html += `<div style="margin:16px 0 8px;font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:2px">UNGROUPED</div>`;
-    html += byGroup['__none'].map(p => supParticipantRow(p, 'var(--text-dim)')).join('');
   }
+  html += scopedParticipants.map(p => supParticipantRow(p, color)).join('');
   el.innerHTML = html;
 }
 
@@ -1134,10 +1265,14 @@ function pickColor(c) { selectedColor = c; renderColorPalette(); }
 async function addGroup() {
   const name = document.getElementById('gName').value.trim();
   if (!name) return;
+  const supPin = document.getElementById('gSupPin').value.trim();
   try {
-    await db.collection('groups').doc(uid()).set({ name, color: selectedColor });
+    const data = { name, color: selectedColor };
+    if (supPin.length === 4) data.supervisorPinHash = await sha256(supPin);
+    await db.collection('groups').doc(uid()).set(data);
     toast(`Group "${name}" created ✓`);
     document.getElementById('gName').value = '';
+    document.getElementById('gSupPin').value = '';
   } catch(e) { toast('Error creating group', 'err'); }
 }
 
@@ -1166,6 +1301,9 @@ function renderGroups() {
         <div style="font-size:14px;font-weight:700;margin-bottom:3px">${esc(g.name)}</div>
         <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">${pCount} participant${pCount!==1?'s':''} &nbsp;·&nbsp; ${sCount} slot${sCount!==1?'s':''}</div>
       </div>
+      ${g.supervisorPinHash
+        ? `<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px;padding:3px 8px;background:var(--green-dim);border-radius:6px;border:1px solid rgba(52,211,153,.2);cursor:pointer" onclick="resetGroupSupPin('${g.id}')" title="Click to reset">🔑 SUPERVISOR</span>`
+        : `<button class="btn-g btn-sm" style="font-size:10px;padding:4px 10px" onclick="setGroupSupPin('${g.id}')">+ Supervisor</button>`}
       <div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>
       <button class="btn-rm" onclick="removeGroup('${g.id}')">×</button>
     </div>`;
@@ -1284,12 +1422,13 @@ function showSubForm(type) {
 async function addSingleSlot() {
   if (!adminSelDate) return;
   const time    = document.getElementById('sTime').value;
+  const dur     = parseInt(document.getElementById('sDur').value) || 30;
   const label   = document.getElementById('sLabel').value.trim();
   const groupId = document.getElementById('sGroup').value || 'all';
   if (!time) { toast('Pick a time', 'err'); return; }
   if (slots.find(s => s.date===adminSelDate && s.time===time && s.groupId===groupId)) { toast('Slot already exists', 'err'); return; }
   try {
-    await db.collection('slots').doc(uid()).set({ date: adminSelDate, time, label, groupId });
+    await db.collection('slots').doc(uid()).set({ date: adminSelDate, time, duration: dur, label, groupId });
     toast('Slot added ✓');
     document.getElementById('sTime').value  = '';
     document.getElementById('sLabel').value = '';
@@ -1336,7 +1475,7 @@ async function addBlock() {
     let added = 0;
     times.forEach(t => {
       if (!slots.find(s => s.date===adminSelDate && s.time===t && s.groupId===groupId)) {
-        batch.set(db.collection('slots').doc(uid()), { date: adminSelDate, time: t, label, groupId });
+        batch.set(db.collection('slots').doc(uid()), { date: adminSelDate, time: t, duration: dur, label, groupId });
         added++;
       }
     });
@@ -1512,7 +1651,11 @@ function renderBookingDayPanel(ds) {
           <div class="sc-status" style="color:${isMine?'var(--purple)':isTaken?'var(--text-dim)':'var(--green)'}">
             ${isMine?'● BOOKED':isTaken?'TAKEN':'AVAILABLE'}
           </div>
-          ${isMine?'<div class="sc-hint">Tap to cancel</div>':''}
+          ${isMine?`<div class="sc-hint">Tap to cancel</div>
+          <div style="display:flex;gap:6px;margin-top:6px" onclick="event.stopPropagation()">
+            <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(bookingSlots.find(x=>x.id==='${s.id}'),'${esc(p.name)}')">📅 .ics</button>
+            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s)}" target="_blank" rel="noopener">G Cal</a>
+          </div>`:''}
         </div>`;
       }).join('')}
     </div>`;
@@ -1546,11 +1689,18 @@ async function toggleBook(sId) {
     : [...(p.bookedSlots||[]), sId];
   try {
     await db.collection('participants').doc(currentPid).update({ bookedSlots: newSlots });
-    toast(isMine ? 'Booking cancelled' : 'Session booked! ✓');
-    if (!isMine) setTimeout(() => {
-      const c = document.querySelector(`[data-slot="${sId}"]`);
-      if (c) { c.classList.add('sc-flash'); setTimeout(()=>c.classList.remove('sc-flash'),500); }
-    }, 50);
+    if (isMine) {
+      toast('Booking cancelled');
+    } else {
+      // Show confirmation overlay with calendar links
+      const slot = bookingSlots.find(s => s.id === sId);
+      if (slot) showBookingConfirmation(slot, p.name);
+      else toast('Session booked! ✓');
+      setTimeout(() => {
+        const c = document.querySelector(`[data-slot="${sId}"]`);
+        if (c) { c.classList.add('sc-flash'); setTimeout(()=>c.classList.remove('sc-flash'),500); }
+      }, 50);
+    }
   } catch(e) { toast('Error updating booking', 'err'); }
 }
 
@@ -1613,6 +1763,28 @@ async function enterCode() {
 // ══════════════════════════════════════════════════════
 //  OVERVIEW
 // ══════════════════════════════════════════════════════
+function exportCSV() {
+  const csvEsc = s => '"' + String(s||'').replace(/"/g,'""') + '"';
+  const rows = [['Date','Time','Duration (min)','Label','Group','Booked By','Participant Code']];
+  slots.forEach(s => {
+    const g = getGroup(s.groupId);
+    const b = getBooker(s.id);
+    rows.push([
+      s.date, fmtTime(s.time), s.duration||30, s.label||'',
+      g ? g.name : (s.groupId==='all'?'All Groups':''),
+      b ? b.name : '', b ? b.id : ''
+    ]);
+  });
+  const csv = rows.map(r => r.map(csvEsc).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = '4E_Workshop_Bookings_' + todayStr() + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('CSV exported ✓');
+}
+
 function renderOverview() {
   const total = participants.reduce((a,p) => a+(p.bookedSlots?.length||0), 0);
   document.getElementById('statsGrid').innerHTML = [
@@ -1651,14 +1823,6 @@ function renderOverview() {
 // ══════════════════════════════════════════════════════
 //  SETTINGS
 // ══════════════════════════════════════════════════════
-async function resetSupPin() {
-  try {
-    await db.collection('config').doc('supervisor').delete();
-    supAuthed = false;
-    toast('Supervisor PIN cleared — they can set a new one on next login');
-  } catch(e) { toast('Error resetting supervisor PIN', 'err'); }
-}
-
 function showResetConfirm() { document.getElementById('resetOverlay').style.display='flex'; }
 
 async function confirmReset() {
