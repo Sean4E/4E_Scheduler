@@ -356,13 +356,17 @@ input::placeholder{color:var(--text-dim)}
     <div class="hdr-title">Supervisor</div>
     <button class="btn-g btn-sm" onclick="doSupLogout()">🔒 Lock</button>
   </div>
-  <div class="content" style="max-width:760px">
+  <div class="content" style="max-width:860px">
     <div class="card" style="padding:20px;margin-bottom:18px">
       <div class="eyebrow" style="color:var(--purple);margin-bottom:14px">ADD PARTICIPANT</div>
       <div class="form-row">
         <div class="inline-field" style="flex:1;min-width:150px">
           <label>NAME</label>
           <input type="text" id="supPName" placeholder="Participant name" onkeydown="if(event.key==='Enter')supAddParticipant()">
+        </div>
+        <div class="inline-field" style="flex:1;min-width:180px">
+          <label>EMAIL <span style="font-size:8px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL)</span></label>
+          <input type="email" id="supPEmail" placeholder="email@example.com">
         </div>
         <div class="inline-field">
           <label>SESSIONS</label>
@@ -376,6 +380,32 @@ input::placeholder{color:var(--text-dim)}
       </div>
     </div>
     <div id="supParticipantsList"></div>
+    <div class="divider" style="margin:24px 0"></div>
+    <div class="card" style="padding:20px">
+      <div class="eyebrow" style="color:var(--orange);margin-bottom:14px">ASSIGN SLOTS</div>
+      <p style="color:var(--text-mid);font-size:12px;margin-bottom:14px">Select a participant, then pick an available slot to book for them.</p>
+      <div class="form-row" style="margin-bottom:14px">
+        <div class="inline-field" style="flex:1;min-width:180px">
+          <label>PARTICIPANT</label>
+          <select id="supAssignPart"></select>
+        </div>
+        <div class="inline-field" style="min-width:150px">
+          <label>DATE</label>
+          <input type="date" id="supAssignDate" onchange="renderSupSlotPicker()">
+        </div>
+        <div class="inline-field" style="flex:1;min-width:140px">
+          <label>AVAILABLE SLOT</label>
+          <select id="supAssignSlot"></select>
+        </div>
+        <div class="inline-field" style="align-items:flex-end">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap">
+            <input type="checkbox" id="supSendCal" style="width:auto;accent-color:var(--purple)"> <span style="font-size:10px;color:var(--text-mid);letter-spacing:1px">📅 DOWNLOAD .ICS</span>
+          </label>
+        </div>
+        <button class="btn-p" onclick="supAssignSlot()">Assign</button>
+      </div>
+      <div id="supAssignedList"></div>
+    </div>
   </div>
 </div>
 
@@ -429,6 +459,10 @@ input::placeholder{color:var(--text-dim)}
           <div class="inline-field" style="flex:1;min-width:150px">
             <label>NAME</label>
             <input type="text" id="pName" placeholder="Participant name" onkeydown="if(event.key==='Enter')addParticipant()">
+          </div>
+          <div class="inline-field" style="flex:1;min-width:180px">
+            <label>EMAIL <span style="font-size:8px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL)</span></label>
+            <input type="email" id="pEmail" placeholder="email@example.com">
           </div>
           <div class="inline-field">
             <label>SESSIONS</label>
@@ -491,6 +525,12 @@ input::placeholder{color:var(--text-dim)}
                   <select id="sGroup"></select>
                 </div>
               </div>
+              <div class="form-row" style="margin-top:10px">
+                <div class="inline-field" style="flex:1">
+                  <label>MEETING LINK <span style="font-size:8px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL — ZOOM / TEAMS / MEET)</span></label>
+                  <input type="text" id="sMeetLink" placeholder="https://zoom.us/j/...">
+                </div>
+              </div>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn-p btn-sm" onclick="addSingleSlot()" style="flex:1">Add Slot</button>
                 <button class="btn-g btn-sm" onclick="showSubForm(null)">Cancel</button>
@@ -531,6 +571,12 @@ input::placeholder{color:var(--text-dim)}
                 <div class="inline-field" style="min-width:130px">
                   <label>GROUP</label>
                   <select id="bGroup"></select>
+                </div>
+              </div>
+              <div class="form-row" style="margin-top:10px">
+                <div class="inline-field" style="flex:1">
+                  <label>MEETING LINK <span style="font-size:8px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL — APPLIED TO ALL SLOTS)</span></label>
+                  <input type="text" id="bMeetLink" placeholder="https://zoom.us/j/...">
                 </div>
               </div>
               <div id="blockPreview" style="display:none" class="block-preview">
@@ -757,8 +803,9 @@ function generateICS(slot, participantName) {
   const { start, end } = slotToDateTimes(slot);
   const g = getGroup(slot.groupId);
   const summary = '4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : '');
-  const desc = (slot.label ? slot.label + '\\n' : '') + 'Booked by: ' + participantName;
-  return [
+  let desc = (slot.label ? slot.label + '\\n' : '') + 'Booked by: ' + participantName;
+  if (slot.meetingLink) desc += '\\n\\nJoin Meeting: ' + slot.meetingLink;
+  const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//4E Virtual Design//Workshop Scheduler//EN',
@@ -768,9 +815,10 @@ function generateICS(slot, participantName) {
     'SUMMARY:' + summary,
     'DESCRIPTION:' + desc,
     'STATUS:CONFIRMED',
-    'END:VEVENT',
-    'END:VCALENDAR'
-  ].join('\r\n');
+  ];
+  if (slot.meetingLink) lines.push('LOCATION:' + slot.meetingLink);
+  lines.push('END:VEVENT', 'END:VCALENDAR');
+  return lines.join('\r\n');
 }
 
 function downloadICS(slot, participantName) {
@@ -787,9 +835,13 @@ function googleCalURL(slot) {
   const { start, end } = slotToDateTimes(slot);
   const g = getGroup(slot.groupId);
   const title = encodeURIComponent('4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : ''));
-  const details = encodeURIComponent(slot.label || '4E Virtual Design workshop session');
+  let detailText = slot.label || '4E Virtual Design workshop session';
+  if (slot.meetingLink) detailText += '\n\nJoin Meeting: ' + slot.meetingLink;
+  const details = encodeURIComponent(detailText);
   const dates = toICSDate(start) + '/' + toICSDate(end);
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}`;
+  let url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}`;
+  if (slot.meetingLink) url += '&location=' + encodeURIComponent(slot.meetingLink);
+  return url;
 }
 
 function showBookingConfirmation(slot, participantName) {
@@ -800,7 +852,8 @@ function showBookingConfirmation(slot, participantName) {
   document.getElementById('confirmDetails').innerHTML =
     `<strong style="color:var(--text)">${dayStr}</strong><br>${timeStr} · ${dur} minutes` +
     (slot.label ? `<br><span style="color:var(--text-dim)">${esc(slot.label)}</span>` : '') +
-    (g && g.id !== 'all' ? `<br><span style="color:${g.color}">${esc(g.name)}</span>` : '');
+    (g && g.id !== 'all' ? `<br><span style="color:${g.color}">${esc(g.name)}</span>` : '') +
+    (slot.meetingLink ? `<br><a href="${esc(slot.meetingLink)}" target="_blank" rel="noopener" style="color:var(--cyan);font-size:12px;font-family:var(--mono)">🔗 Join Meeting</a>` : '');
   document.getElementById('confirmICS').onclick = () => downloadICS(slot, participantName);
   document.getElementById('confirmGCal').href = googleCalURL(slot);
   document.getElementById('bookingConfirm').style.display = 'flex';
@@ -985,13 +1038,22 @@ function startSupListeners() {
     participants = snap.docs.map(d => ({id: d.id, ...d.data()}));
     if (supEditingId) return;
     renderSupParticipants();
+    renderSupAssignSelects();
   }, err => console.error('sup participants listener:', err));
+
+  unsubSupSlots = db.collection('slots').orderBy('date').onSnapshot(snap => {
+    const all = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => a.date===b.date ? (a.time||'').localeCompare(b.time||'') : 0);
+    supSlots = all.filter(s => !supGroupId || s.groupId==='all' || s.groupId===supGroupId);
+    renderSupSlotPicker();
+    renderSupAssignedList();
+  }, err => console.error('sup slots listener:', err));
 }
 
 function stopSupListeners() {
   if (unsubSupGroups)       { unsubSupGroups();       unsubSupGroups       = null; }
   if (unsubSupParticipants) { unsubSupParticipants(); unsubSupParticipants = null; }
-  groups = []; participants = [];
+  if (unsubSupSlots)        { unsubSupSlots();        unsubSupSlots        = null; }
+  groups = []; participants = []; supSlots = [];
 }
 
 function renderSupShell() {
@@ -1016,16 +1078,20 @@ function renderSupGroupSelect() {
 }
 
 async function supAddParticipant() {
-  const name = document.getElementById('supPName').value.trim();
-  const n    = parseInt(document.getElementById('supPSess').value) || 1;
-  const gid  = supGroupId || document.getElementById('supPGroup').value || null;
+  const name  = document.getElementById('supPName').value.trim();
+  const email = document.getElementById('supPEmail').value.trim();
+  const n     = parseInt(document.getElementById('supPSess').value) || 1;
+  const gid   = supGroupId || document.getElementById('supPGroup').value || null;
   if (!name) return;
   const id = uid();
+  const data = { name, sessionsAllocated: n, bookedSlots: [], groupId: gid };
+  if (email) data.email = email;
   try {
-    await db.collection('participants').doc(id).set({ name, sessionsAllocated: n, bookedSlots: [], groupId: gid });
+    await db.collection('participants').doc(id).set(data);
     toast(`${name} added ✓`);
-    document.getElementById('supPName').value = '';
-    document.getElementById('supPSess').value = 1;
+    document.getElementById('supPName').value  = '';
+    document.getElementById('supPEmail').value = '';
+    document.getElementById('supPSess').value  = 1;
   } catch(e) { toast('Error adding participant', 'err'); }
 }
 
@@ -1091,6 +1157,99 @@ function supParticipantRow(p, color) {
     <div class="code-pill" onclick="copyCode('${p.id}')" title="Click to copy">${p.id}</div>
     <button class="btn-rm" onclick="supRemoveParticipant('${p.id}')">×</button>
   </div>`;
+}
+
+// ══════════════════════════════════════════════════════
+//  SUPERVISOR — SLOT ASSIGNMENT
+// ══════════════════════════════════════════════════════
+let supSlots = []; // slots visible to supervisor
+let unsubSupSlots = null;
+
+function renderSupAssignSelects() {
+  // Participant dropdown — scoped to supervisor's group
+  const partEl = document.getElementById('supAssignPart');
+  if (!partEl) return;
+  const scoped = supGroupId ? participants.filter(p => p.groupId === supGroupId) : participants;
+  partEl.innerHTML = '<option value="">Select…</option>' + scoped.map(p => {
+    const rem = p.sessionsAllocated - (p.bookedSlots?.length||0);
+    return `<option value="${p.id}" ${rem<=0?'disabled':''}>${esc(p.name)} (${rem} left)</option>`;
+  }).join('');
+  renderSupSlotPicker();
+  renderSupAssignedList();
+}
+
+function renderSupSlotPicker() {
+  const slotEl = document.getElementById('supAssignSlot');
+  if (!slotEl) return;
+  const dateVal = document.getElementById('supAssignDate').value;
+  if (!dateVal) { slotEl.innerHTML = '<option value="">Pick a date first</option>'; return; }
+  // Show available (unbooked) slots for this date in this group
+  const avail = supSlots.filter(s => s.date === dateVal && !getBooker(s.id));
+  if (!avail.length) { slotEl.innerHTML = '<option value="">No available slots</option>'; return; }
+  slotEl.innerHTML = avail.map(s =>
+    `<option value="${s.id}">${fmtTime(s.time)}${s.label?' — '+esc(s.label):''}${s.meetingLink?' 🔗':''}</option>`
+  ).join('');
+}
+
+async function supAssignSlot() {
+  const pid = document.getElementById('supAssignPart').value;
+  const sid = document.getElementById('supAssignSlot').value;
+  if (!pid) { toast('Select a participant', 'err'); return; }
+  if (!sid) { toast('Select a slot', 'err'); return; }
+  const p = participants.find(x => x.id === pid);
+  if (!p) return;
+  const rem = p.sessionsAllocated - (p.bookedSlots?.length||0);
+  if (rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
+  if (p.bookedSlots?.includes(sid)) { toast('Already booked this slot', 'err'); return; }
+  try {
+    await db.collection('participants').doc(pid).update({
+      bookedSlots: [...(p.bookedSlots||[]), sid]
+    });
+    toast(`Slot assigned to ${p.name} ✓`);
+    // Download .ics if checked
+    if (document.getElementById('supSendCal').checked) {
+      const slot = supSlots.find(s => s.id === sid);
+      if (slot) downloadICS(slot, p.name);
+    }
+  } catch(e) { toast('Error assigning slot', 'err'); }
+}
+
+function renderSupAssignedList() {
+  const el = document.getElementById('supAssignedList');
+  if (!el) return;
+  const scoped = supGroupId ? participants.filter(p => p.groupId === supGroupId) : participants;
+  const booked = [];
+  scoped.forEach(p => {
+    (p.bookedSlots||[]).forEach(sid => {
+      const s = supSlots.find(x => x.id === sid);
+      if (s) booked.push({ participant: p, slot: s });
+    });
+  });
+  if (!booked.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text-dim);margin-top:12px">No slots assigned yet.</div>'; return; }
+  booked.sort((a,b) => a.slot.date===b.slot.date ? (a.slot.time||'').localeCompare(b.slot.time||'') : a.slot.date.localeCompare(b.slot.date));
+  el.innerHTML = '<div style="margin-top:14px"><div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">ASSIGNED BOOKINGS</div>' +
+    booked.map(({participant:p, slot:s}) =>
+      `<div class="asl-row card" style="margin-bottom:4px">
+        <div class="asl-time">${fmtTime(s.time)}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text-mid)">${fmtShort(s.date)}</div>
+        <div class="booked-name">${esc(p.name)}</div>
+        ${s.meetingLink?'<span style="font-size:11px" title="Has meeting link">🔗</span>':''}
+        <div style="flex:1"></div>
+        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(supSlots.find(x=>x.id==='${s.id}'),'${esc(p.name)}')">📅 .ics</button>
+        <button class="btn-rm" onclick="supUnassignSlot('${p.id}','${s.id}')" title="Unassign">×</button>
+      </div>`
+    ).join('') + '</div>';
+}
+
+async function supUnassignSlot(pid, sid) {
+  const p = participants.find(x => x.id === pid);
+  if (!p) return;
+  try {
+    await db.collection('participants').doc(pid).update({
+      bookedSlots: (p.bookedSlots||[]).filter(s => s !== sid)
+    });
+    toast('Slot unassigned');
+  } catch(e) { toast('Error unassigning slot', 'err'); }
 }
 
 // ══════════════════════════════════════════════════════
@@ -1324,16 +1483,20 @@ function renderGroupSelects() {
 //  PARTICIPANTS
 // ══════════════════════════════════════════════════════
 async function addParticipant() {
-  const name = document.getElementById('pName').value.trim();
-  const n    = parseInt(document.getElementById('pSess').value) || 1;
-  const gid  = document.getElementById('pGroup').value || null;
+  const name  = document.getElementById('pName').value.trim();
+  const email = document.getElementById('pEmail').value.trim();
+  const n     = parseInt(document.getElementById('pSess').value) || 1;
+  const gid   = document.getElementById('pGroup').value || null;
   if (!name) return;
   const id = uid();
+  const data = { name, sessionsAllocated: n, bookedSlots: [], groupId: gid };
+  if (email) data.email = email;
   try {
-    await db.collection('participants').doc(id).set({ name, sessionsAllocated: n, bookedSlots: [], groupId: gid });
+    await db.collection('participants').doc(id).set(data);
     toast(`${name} added ✓`);
-    document.getElementById('pName').value = '';
-    document.getElementById('pSess').value = 1;
+    document.getElementById('pName').value  = '';
+    document.getElementById('pEmail').value = '';
+    document.getElementById('pSess').value  = 1;
   } catch(e) { toast('Error adding participant', 'err'); }
 }
 
@@ -1390,7 +1553,7 @@ function participantRow(p, color) {
   return `<div class="card p-row">
     <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${esc(p.name[0].toUpperCase())}</div>
     <div class="p-info">
-      <div class="p-name">${esc(p.name)}</div>
+      <div class="p-name">${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
       <div class="prog-wrap">
         <div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>
         <span class="p-stat">${p.bookedSlots?.length||0}/${p.sessionsAllocated}</span>
@@ -1421,17 +1584,21 @@ function showSubForm(type) {
 
 async function addSingleSlot() {
   if (!adminSelDate) return;
-  const time    = document.getElementById('sTime').value;
-  const dur     = parseInt(document.getElementById('sDur').value) || 30;
-  const label   = document.getElementById('sLabel').value.trim();
-  const groupId = document.getElementById('sGroup').value || 'all';
+  const time     = document.getElementById('sTime').value;
+  const dur      = parseInt(document.getElementById('sDur').value) || 30;
+  const label    = document.getElementById('sLabel').value.trim();
+  const groupId  = document.getElementById('sGroup').value || 'all';
+  const meetLink = document.getElementById('sMeetLink').value.trim();
   if (!time) { toast('Pick a time', 'err'); return; }
   if (slots.find(s => s.date===adminSelDate && s.time===time && s.groupId===groupId)) { toast('Slot already exists', 'err'); return; }
+  const data = { date: adminSelDate, time, duration: dur, label, groupId };
+  if (meetLink) data.meetingLink = meetLink;
   try {
-    await db.collection('slots').doc(uid()).set({ date: adminSelDate, time, duration: dur, label, groupId });
+    await db.collection('slots').doc(uid()).set(data);
     toast('Slot added ✓');
-    document.getElementById('sTime').value  = '';
-    document.getElementById('sLabel').value = '';
+    document.getElementById('sTime').value     = '';
+    document.getElementById('sLabel').value    = '';
+    document.getElementById('sMeetLink').value = '';
   } catch(e) { toast('Error adding slot', 'err'); }
 }
 
@@ -1466,7 +1633,8 @@ async function addBlock() {
   const dur     = parseInt(document.getElementById('bDur').value);
   const brk     = parseInt(document.getElementById('bBreak').value);
   const groupId = document.getElementById('bGroup').value || 'all';
-  const label   = document.getElementById('bDur').options[document.getElementById('bDur').selectedIndex].text + ' session';
+  const label    = document.getElementById('bDur').options[document.getElementById('bDur').selectedIndex].text + ' session';
+  const meetLink = document.getElementById('bMeetLink').value.trim();
   if (!start || !end) { toast('Set start and end times', 'err'); return; }
   const times = generateBlockSlots(start, end, dur, brk);
   if (!times.length) { toast('No slots fit in this range', 'err'); return; }
@@ -1475,7 +1643,9 @@ async function addBlock() {
     let added = 0;
     times.forEach(t => {
       if (!slots.find(s => s.date===adminSelDate && s.time===t && s.groupId===groupId)) {
-        batch.set(db.collection('slots').doc(uid()), { date: adminSelDate, time: t, duration: dur, label, groupId });
+        const data = { date: adminSelDate, time: t, duration: dur, label, groupId };
+        if (meetLink) data.meetingLink = meetLink;
+        batch.set(db.collection('slots').doc(uid()), data);
         added++;
       }
     });
@@ -1573,6 +1743,7 @@ function renderAdminDayPanel(ds) {
         return `<div class="asl-row card">
           <div class="asl-time" style="color:${b?'var(--purple)':'var(--text)'}">${fmtTime(s.time)}</div>
           <div class="asl-lbl">${esc(s.label)}</div>
+          ${s.meetingLink?'<span style="font-size:11px" title="Meeting link attached">🔗</span>':''}
           ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
           ${b?`<div class="booked-name">${esc(b.name)}</div>`:`<div class="avail-tag">AVAIL</div>`}
           <button class="btn-rm" onclick="removeSlot('${s.id}')">×</button>
@@ -1652,9 +1823,10 @@ function renderBookingDayPanel(ds) {
             ${isMine?'● BOOKED':isTaken?'TAKEN':'AVAILABLE'}
           </div>
           ${isMine?`<div class="sc-hint">Tap to cancel</div>
-          <div style="display:flex;gap:6px;margin-top:6px" onclick="event.stopPropagation()">
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
             <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(bookingSlots.find(x=>x.id==='${s.id}'),'${esc(p.name)}')">📅 .ics</button>
             <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s)}" target="_blank" rel="noopener">G Cal</a>
+            ${s.meetingLink?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(s.meetingLink)}" target="_blank" rel="noopener">🔗 Join</a>`:''}
           </div>`:''}
         </div>`;
       }).join('')}
@@ -1765,14 +1937,15 @@ async function enterCode() {
 // ══════════════════════════════════════════════════════
 function exportCSV() {
   const csvEsc = s => '"' + String(s||'').replace(/"/g,'""') + '"';
-  const rows = [['Date','Time','Duration (min)','Label','Group','Booked By','Participant Code']];
+  const rows = [['Date','Time','Duration (min)','Label','Group','Booked By','Email','Participant Code','Meeting Link']];
   slots.forEach(s => {
     const g = getGroup(s.groupId);
     const b = getBooker(s.id);
     rows.push([
       s.date, fmtTime(s.time), s.duration||30, s.label||'',
       g ? g.name : (s.groupId==='all'?'All Groups':''),
-      b ? b.name : '', b ? b.id : ''
+      b ? b.name : '', b ? (b.email||'') : '', b ? b.id : '',
+      s.meetingLink||''
     ]);
   });
   const csv = rows.map(r => r.map(csvEsc).join(',')).join('\n');
