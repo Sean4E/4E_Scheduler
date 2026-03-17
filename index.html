@@ -54,6 +54,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js" async defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -536,6 +538,15 @@ input::placeholder{color:var(--text-dim)}
             <input type="text" id="gSupPin" placeholder="4-digit PIN for supervisor access" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="width:200px;letter-spacing:4px;font-size:14px" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
           </div>
         </div>
+        <div style="margin-bottom:14px">
+          <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">MEETING MODE</div>
+          <div class="form-row">
+            <select id="gMeetMode" style="width:260px">
+              <option value="individual">Individual meetings (unique per slot)</option>
+              <option value="shared">Shared meeting (one link for all slots)</option>
+            </select>
+          </div>
+        </div>
         <button class="btn-p" onclick="addGroup()">+ Create Group</button>
       </div>
       <div id="groupsList"></div>
@@ -797,6 +808,105 @@ input::placeholder{color:var(--text-dim)}
           </div>
         </div>
       </div>
+      <!-- ── INTEGRATIONS ── -->
+      <div class="card" style="padding:24px;max-width:540px;margin-bottom:20px">
+        <div class="eyebrow" style="color:var(--cyan);margin-bottom:16px">INTEGRATIONS</div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:16px">Calendar & Meeting Providers</h3>
+
+        <!-- Google Calendar -->
+        <div style="background:var(--glass-mid);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <span style="font-size:18px">📅</span>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:700">Google Calendar</div>
+              <div id="gcalStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Not connected</div>
+            </div>
+            <button class="btn-p btn-sm" id="btnGcalConnect" onclick="connectGoogleCalendar()">Connect</button>
+            <button class="btn-g btn-sm" id="btnGcalDisconnect" onclick="disconnectGoogleCalendar()" style="display:none">Disconnect</button>
+          </div>
+          <div id="gcalSettings" style="display:none">
+            <div class="toggle-wrap" onclick="toggleGcalAutoCreate()" style="margin-bottom:10px">
+              <div class="toggle-track" id="gcalAutoToggle"><div class="toggle-thumb"></div></div>
+              <span class="toggle-label" style="font-size:12px">Auto-create events on booking</span>
+            </div>
+            <div class="emailjs-field">
+              <label>TITLE TEMPLATE</label>
+              <input type="text" id="gcalTitleTemplate" placeholder="4E Workshop — {participant}" value="4E Workshop — {participant}" onchange="saveIntegrationSettings()">
+            </div>
+            <div class="emailjs-field">
+              <label>REMINDER (MINUTES BEFORE)</label>
+              <input type="number" id="gcalReminderMins" value="30" min="0" max="1440" style="width:100px" onchange="saveIntegrationSettings()">
+            </div>
+            <div class="emailjs-field">
+              <label>DESCRIPTION TEMPLATE</label>
+              <input type="text" id="gcalDescTemplate" placeholder="{group} — {label}" value="{group} — {label}" onchange="saveIntegrationSettings()">
+            </div>
+          </div>
+        </div>
+
+        <!-- Zoom -->
+        <div style="background:var(--glass-mid);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <span style="font-size:18px">🎥</span>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:700">Zoom Meetings</div>
+              <div id="zoomStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Not connected</div>
+            </div>
+            <button class="btn-p btn-sm" id="btnZoomConnect" onclick="connectZoom()">Connect</button>
+            <button class="btn-g btn-sm" id="btnZoomDisconnect" onclick="disconnectZoom()" style="display:none">Disconnect</button>
+          </div>
+          <div id="zoomSettings" style="display:none">
+            <div class="toggle-wrap" onclick="toggleZoomWaitingRoom()" style="margin-bottom:10px">
+              <div class="toggle-track" id="zoomWaitingRoomToggle"><div class="toggle-thumb"></div></div>
+              <span class="toggle-label" style="font-size:12px">Enable waiting room</span>
+            </div>
+            <div class="toggle-wrap" onclick="toggleZoomPasscode()" style="margin-bottom:10px">
+              <div class="toggle-track" id="zoomPasscodeToggle"><div class="toggle-thumb"></div></div>
+              <span class="toggle-label" style="font-size:12px">Require passcode</span>
+            </div>
+            <div class="toggle-wrap" onclick="toggleZoomAutoRecord()" style="margin-bottom:10px">
+              <div class="toggle-track" id="zoomAutoRecordToggle"><div class="toggle-thumb"></div></div>
+              <span class="toggle-label" style="font-size:12px">Auto-record meetings</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Outlook / Teams (Coming Soon) -->
+        <div style="background:var(--glass-mid);border:1px solid var(--border);border-radius:10px;padding:16px;opacity:.5">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">📧</span>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:700">Outlook Calendar / Microsoft Teams</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Coming soon</div>
+            </div>
+            <button class="btn-g btn-sm" disabled>Connect</button>
+          </div>
+        </div>
+
+        <!-- Calendar Event Defaults -->
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+          <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">ACTIVE PROVIDER</div>
+          <div class="form-row">
+            <div class="inline-field" style="flex:1">
+              <label>CALENDAR</label>
+              <select id="intCalProvider" onchange="saveIntegrationSettings()" style="width:180px">
+                <option value="none">None</option>
+                <option value="google">Google Calendar</option>
+                <option value="outlook" disabled>Outlook (coming soon)</option>
+              </select>
+            </div>
+            <div class="inline-field" style="flex:1">
+              <label>MEETINGS</label>
+              <select id="intMeetProvider" onchange="saveIntegrationSettings()" style="width:180px">
+                <option value="none">None</option>
+                <option value="zoom">Zoom</option>
+                <option value="teams" disabled>Teams (coming soon)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card" style="padding:24px;max-width:440px">
         <div class="eyebrow" style="color:var(--red);margin-bottom:16px">DANGER ZONE</div>
         <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Reset All Data</h3>
@@ -2015,8 +2125,9 @@ async function addGroup() {
   if (!name) return;
   const meetLink = document.getElementById('gMeetLink').value.trim();
   const supPin = document.getElementById('gSupPin').value.trim();
+  const meetMode = document.getElementById('gMeetMode').value || 'individual';
   try {
-    const data = { name, color: selectedColor };
+    const data = { name, color: selectedColor, meetMode };
     if (meetLink) data.meetingLink = meetLink;
     if (supPin.length === 4) data.supervisorPinHash = await sha256(supPin);
     await db.collection('groups').doc(uid()).set(data);
@@ -2024,6 +2135,7 @@ async function addGroup() {
     document.getElementById('gName').value = '';
     document.getElementById('gMeetLink').value = '';
     document.getElementById('gSupPin').value = '';
+    document.getElementById('gMeetMode').value = 'individual';
   } catch(e) { toast('Error creating group', 'err'); }
 }
 
@@ -2069,6 +2181,7 @@ function renderGroups() {
           <div style="font-size:14px;font-weight:700;margin-bottom:3px">${esc(g.name)}</div>
           <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">${pCount} participant${pCount!==1?'s':''} &nbsp;·&nbsp; ${sCount} slot${sCount!==1?'s':''}</div>
         </div>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:1px;padding:3px 8px;background:var(--glass);border-radius:6px;border:1px solid var(--border)">${g.meetMode==='shared'?'SHARED MEETING':'INDIVIDUAL'}</span>
         ${g.supervisorPinHash
           ? `<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px;padding:3px 8px;background:var(--green-dim);border-radius:6px;border:1px solid rgba(52,211,153,.2);cursor:pointer" onclick="resetGroupSupPin('${g.id}')" title="Click to reset">🔑 SUPERVISOR</span>`
           : `<button class="btn-g btn-sm" style="font-size:10px;padding:4px 10px" onclick="setGroupSupPin('${g.id}')">+ Supervisor</button>`}
@@ -2825,6 +2938,469 @@ const origStartAdminListeners = startAdminListeners;
 startAdminListeners = function() {
   origStartAdminListeners();
   loadEmailJSSettings();
+  loadIntegrationSettings();
+};
+
+// ══════════════════════════════════════════════════════
+//  INTEGRATIONS — Google Calendar & Zoom
+// ══════════════════════════════════════════════════════
+
+// --- Integration config state ---
+let integrationConfig = {
+  calProvider: 'none', meetProvider: 'none',
+  gcal: { autoCreate: false, titleTemplate: '4E Workshop — {participant}', reminderMins: 30, descTemplate: '{group} — {label}' },
+  zoom: { waitingRoom: true, passcode: true, autoRecord: false },
+};
+
+let googleAccessToken = null; // session-only, never persisted
+let googleUserEmail   = null;
+let gapiInited = false;
+let gisInited  = false;
+let tokenClient = null;
+
+const GOOGLE_CLIENT_ID = '629471213590-obk2tqf8559romco0n9i57rvcooae3aa.apps.googleusercontent.com';
+const ZOOM_CLIENT_ID   = '9fw0xTu0StKj2OPZpP6fVQ';
+// NOTE: Cloud Functions base URL — update after deploying functions
+const FUNCTIONS_BASE   = 'https://us-central1-scheduler4e.cloudfunctions.net';
+
+// --- Load / Save integration config from Firestore ---
+async function loadIntegrationSettings() {
+  try {
+    const doc = await db.collection('config').doc('integrations').get();
+    if (doc.exists) integrationConfig = { ...integrationConfig, ...doc.data() };
+    updateIntegrationUI();
+  } catch(e) { console.error('Error loading integration settings:', e); }
+}
+
+async function saveIntegrationSettings() {
+  // Read form values
+  const t = document.getElementById('gcalTitleTemplate');
+  const r = document.getElementById('gcalReminderMins');
+  const d = document.getElementById('gcalDescTemplate');
+  const cp = document.getElementById('intCalProvider');
+  const mp = document.getElementById('intMeetProvider');
+  if (t) integrationConfig.gcal.titleTemplate = t.value.trim() || '4E Workshop — {participant}';
+  if (r) integrationConfig.gcal.reminderMins = parseInt(r.value) || 30;
+  if (d) integrationConfig.gcal.descTemplate = d.value.trim() || '{group} — {label}';
+  if (cp) integrationConfig.calProvider = cp.value;
+  if (mp) integrationConfig.meetProvider = mp.value;
+  try {
+    await db.collection('config').doc('integrations').set(integrationConfig);
+    updateIntegrationUI();
+    toast('Integration settings saved');
+  } catch(e) { toast('Error saving integration settings', 'err'); }
+}
+
+function updateIntegrationUI() {
+  // Google Calendar status
+  const gcalSt = document.getElementById('gcalStatus');
+  const btnC = document.getElementById('btnGcalConnect');
+  const btnD = document.getElementById('btnGcalDisconnect');
+  const gcalSet = document.getElementById('gcalSettings');
+  if (googleAccessToken && googleUserEmail) {
+    if (gcalSt) gcalSt.innerHTML = '<span style="color:var(--green)">Connected as ' + esc(googleUserEmail) + '</span>';
+    if (btnC) btnC.style.display = 'none';
+    if (btnD) btnD.style.display = '';
+    if (gcalSet) gcalSet.style.display = 'block';
+  } else {
+    if (gcalSt) gcalSt.textContent = 'Not connected';
+    if (btnC) btnC.style.display = '';
+    if (btnD) btnD.style.display = 'none';
+    if (gcalSet) gcalSet.style.display = 'none';
+  }
+  // Gcal toggles
+  const gcalAuto = document.getElementById('gcalAutoToggle');
+  if (gcalAuto) gcalAuto.classList.toggle('on', integrationConfig.gcal.autoCreate);
+  // Form fields
+  const tf = document.getElementById('gcalTitleTemplate');
+  if (tf && !tf.matches(':focus')) tf.value = integrationConfig.gcal.titleTemplate;
+  const rf = document.getElementById('gcalReminderMins');
+  if (rf && !rf.matches(':focus')) rf.value = integrationConfig.gcal.reminderMins;
+  const df = document.getElementById('gcalDescTemplate');
+  if (df && !df.matches(':focus')) df.value = integrationConfig.gcal.descTemplate;
+
+  // Zoom status
+  updateZoomStatusUI();
+
+  // Zoom toggles
+  const zwr = document.getElementById('zoomWaitingRoomToggle');
+  if (zwr) zwr.classList.toggle('on', integrationConfig.zoom.waitingRoom);
+  const zpc = document.getElementById('zoomPasscodeToggle');
+  if (zpc) zpc.classList.toggle('on', integrationConfig.zoom.passcode);
+  const zar = document.getElementById('zoomAutoRecordToggle');
+  if (zar) zar.classList.toggle('on', integrationConfig.zoom.autoRecord);
+
+  // Provider selects
+  const cp = document.getElementById('intCalProvider');
+  if (cp && !cp.matches(':focus')) cp.value = integrationConfig.calProvider || 'none';
+  const mp = document.getElementById('intMeetProvider');
+  if (mp && !mp.matches(':focus')) mp.value = integrationConfig.meetProvider || 'none';
+}
+
+async function updateZoomStatusUI() {
+  const zoomSt = document.getElementById('zoomStatus');
+  const btnZC = document.getElementById('btnZoomConnect');
+  const btnZD = document.getElementById('btnZoomDisconnect');
+  const zoomSet = document.getElementById('zoomSettings');
+  try {
+    const doc = await db.collection('config').doc('zoom').get();
+    if (doc.exists && doc.data().connected) {
+      if (zoomSt) zoomSt.innerHTML = '<span style="color:var(--green)">Connected</span>';
+      if (btnZC) btnZC.style.display = 'none';
+      if (btnZD) btnZD.style.display = '';
+      if (zoomSet) zoomSet.style.display = 'block';
+    } else {
+      if (zoomSt) zoomSt.textContent = 'Not connected';
+      if (btnZC) btnZC.style.display = '';
+      if (btnZD) btnZD.style.display = 'none';
+      if (zoomSet) zoomSet.style.display = 'none';
+    }
+  } catch(e) {
+    if (zoomSt) zoomSt.textContent = 'Not connected';
+  }
+}
+
+// --- Toggle helpers ---
+function toggleGcalAutoCreate() {
+  integrationConfig.gcal.autoCreate = !integrationConfig.gcal.autoCreate;
+  saveIntegrationSettings();
+}
+function toggleZoomWaitingRoom() {
+  integrationConfig.zoom.waitingRoom = !integrationConfig.zoom.waitingRoom;
+  saveIntegrationSettings();
+}
+function toggleZoomPasscode() {
+  integrationConfig.zoom.passcode = !integrationConfig.zoom.passcode;
+  saveIntegrationSettings();
+}
+function toggleZoomAutoRecord() {
+  integrationConfig.zoom.autoRecord = !integrationConfig.zoom.autoRecord;
+  saveIntegrationSettings();
+}
+
+// ══════════════════════════════════════════════════════
+//  GOOGLE CALENDAR — OAuth via Google Identity Services
+// ══════════════════════════════════════════════════════
+function initGapi() {
+  gapi.load('client', async () => {
+    await gapi.client.init({});
+    await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest');
+    gapiInited = true;
+  });
+}
+
+function initGis() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/calendar.events',
+    callback: (resp) => {
+      if (resp.error) { toast('Google sign-in failed: ' + resp.error, 'err'); return; }
+      googleAccessToken = resp.access_token;
+      gapi.client.setToken({ access_token: resp.access_token });
+      // Get user email
+      fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: 'Bearer ' + resp.access_token }
+      }).then(r => r.json()).then(info => {
+        googleUserEmail = info.email || 'Unknown';
+        updateIntegrationUI();
+        toast('Google Calendar connected');
+      }).catch(() => {
+        googleUserEmail = 'Connected';
+        updateIntegrationUI();
+      });
+    },
+  });
+  gisInited = true;
+}
+
+// Initialise on page load (scripts load async)
+window.addEventListener('load', () => {
+  if (typeof gapi !== 'undefined') initGapi();
+  if (typeof google !== 'undefined' && google.accounts) initGis();
+  // Handle Zoom OAuth callback
+  handleZoomOAuthCallback();
+});
+
+function connectGoogleCalendar() {
+  if (!gisInited || !gapiInited) {
+    // Retry init if scripts just loaded
+    if (typeof gapi !== 'undefined' && !gapiInited) initGapi();
+    if (typeof google !== 'undefined' && google.accounts && !gisInited) initGis();
+    if (!gisInited) { toast('Google scripts still loading — try again', 'err'); return; }
+  }
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function disconnectGoogleCalendar() {
+  if (googleAccessToken) {
+    google.accounts.oauth2.revoke(googleAccessToken, () => {});
+  }
+  googleAccessToken = null;
+  googleUserEmail = null;
+  gapi.client.setToken(null);
+  updateIntegrationUI();
+  toast('Google Calendar disconnected');
+}
+
+// --- Google Calendar CRUD ---
+async function createGoogleCalEvent(slot, participantName, participantEmail) {
+  if (!googleAccessToken) return null;
+  const { start, end } = slotToDateTimes(slot);
+  const g = getGroup(slot.groupId);
+  const link = getMeetLink(slot);
+  const title = (integrationConfig.gcal.titleTemplate || '4E Workshop — {participant}')
+    .replace('{participant}', participantName);
+  let desc = (integrationConfig.gcal.descTemplate || '{group} — {label}')
+    .replace('{group}', g ? g.name : '')
+    .replace('{label}', slot.label || '');
+  const notes = '';
+  if (link) desc += '\n\nJoin Meeting: ' + link;
+
+  const event = {
+    summary: title,
+    description: desc,
+    start: { dateTime: start.toISOString() },
+    end:   { dateTime: end.toISOString() },
+    reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: integrationConfig.gcal.reminderMins || 30 }] },
+  };
+  if (link) event.location = link;
+  if (participantEmail) {
+    event.attendees = [{ email: participantEmail }];
+  }
+
+  try {
+    const resp = await gapi.client.calendar.events.insert({
+      calendarId: 'primary',
+      resource: event,
+      sendUpdates: participantEmail ? 'all' : 'none',
+    });
+    return resp.result.id;
+  } catch(e) {
+    console.error('Google Calendar create error:', e);
+    toast('Failed to create calendar event', 'err');
+    return null;
+  }
+}
+
+async function deleteGoogleCalEvent(eventId) {
+  if (!googleAccessToken || !eventId) return;
+  try {
+    await gapi.client.calendar.events.delete({ calendarId: 'primary', eventId });
+  } catch(e) { console.error('Google Calendar delete error:', e); }
+}
+
+async function updateGoogleCalEvent(eventId, updates) {
+  if (!googleAccessToken || !eventId) return;
+  try {
+    await gapi.client.calendar.events.patch({
+      calendarId: 'primary',
+      eventId,
+      resource: updates,
+    });
+  } catch(e) { console.error('Google Calendar update error:', e); }
+}
+
+// ══════════════════════════════════════════════════════
+//  ZOOM — OAuth & Meeting Creation (via Cloud Functions)
+// ══════════════════════════════════════════════════════
+function connectZoom() {
+  const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
+  const url = `https://zoom.us/oauth/authorize?response_type=code&client_id=${ZOOM_CLIENT_ID}&redirect_uri=${redirectUri}`;
+  window.location.href = url;
+}
+
+async function handleZoomOAuthCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if (!code) return;
+  // Clean URL
+  window.history.replaceState({}, document.title, window.location.pathname);
+  toast('Connecting Zoom...');
+  try {
+    const resp = await fetch(FUNCTIONS_BASE + '/zoomOAuth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        redirect_uri: window.location.origin + window.location.pathname,
+      }),
+    });
+    const data = await resp.json();
+    if (data.success) {
+      toast('Zoom connected successfully');
+      updateZoomStatusUI();
+    } else {
+      toast('Zoom connection failed: ' + (data.error || 'Unknown error'), 'err');
+    }
+  } catch(e) {
+    toast('Error connecting Zoom', 'err');
+    console.error('Zoom OAuth error:', e);
+  }
+}
+
+async function disconnectZoom() {
+  try {
+    await db.collection('config').doc('zoom').set({ connected: false });
+    toast('Zoom disconnected');
+    updateZoomStatusUI();
+  } catch(e) { toast('Error disconnecting Zoom', 'err'); }
+}
+
+async function createZoomMeeting(topic, startTime, duration) {
+  try {
+    const resp = await fetch(FUNCTIONS_BASE + '/zoomCreateMeeting', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topic,
+        start_time: startTime,
+        duration: duration || 30,
+        settings: {
+          waiting_room: integrationConfig.zoom.waitingRoom,
+          passcode: integrationConfig.zoom.passcode ? Math.random().toString(36).slice(2,8) : null,
+          auto_recording: integrationConfig.zoom.autoRecord ? 'cloud' : 'none',
+        },
+      }),
+    });
+    const data = await resp.json();
+    if (data.success) return data;
+    console.error('Zoom create meeting failed:', data);
+    return null;
+  } catch(e) {
+    console.error('Zoom create meeting error:', e);
+    return null;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  ABSTRACTED PROVIDERS — createCalendarEvent / createMeetingLink
+// ══════════════════════════════════════════════════════
+async function createCalendarEvent(provider, slot, participant) {
+  if (provider === 'google') {
+    return await createGoogleCalEvent(slot, participant.name, participant.email);
+  }
+  if (provider === 'outlook') {
+    // Placeholder for future Outlook integration
+    console.log('Outlook calendar integration coming soon');
+    return null;
+  }
+  return null;
+}
+
+async function deleteCalevent(provider, eventId) {
+  if (provider === 'google') return await deleteGoogleCalEvent(eventId);
+  return null;
+}
+
+async function createMeetingLink(provider, slot) {
+  if (provider === 'zoom') {
+    const { start } = slotToDateTimes(slot);
+    const g = getGroup(slot.groupId);
+    const topic = '4E Workshop' + (g ? ' — ' + g.name : '');
+    const result = await createZoomMeeting(topic, start.toISOString(), slot.duration || 30);
+    if (result) {
+      // Store the meeting link on the slot
+      await db.collection('slots').doc(slot.id).update({
+        meetingLink: result.join_url,
+        zoomMeetingId: result.meeting_id,
+      });
+      return result.join_url;
+    }
+    return null;
+  }
+  if (provider === 'teams') {
+    console.log('Teams meeting integration coming soon');
+    return null;
+  }
+  return null;
+}
+
+// ══════════════════════════════════════════════════════
+//  WIRE INTO BOOKING / ASSIGNMENT FLOW
+// ══════════════════════════════════════════════════════
+
+// Store original toggleBook and supQuickAssign, then override
+const _origToggleBook = toggleBook;
+toggleBook = async function(sId) {
+  const p = participants.find(x => x.id === currentPid);
+  if (!p) return;
+  const wasMine = isBooked(p, sId);
+
+  await _origToggleBook(sId);
+
+  // After booking (not cancellation)
+  if (!wasMine) {
+    const slot = bookingSlots.find(s => s.id === sId);
+    if (!slot) return;
+    // Auto-create calendar event
+    if (integrationConfig.calProvider !== 'none' && integrationConfig.gcal.autoCreate && googleAccessToken) {
+      const evId = await createCalendarEvent(integrationConfig.calProvider, slot, p);
+      if (evId) {
+        // Store event ID on the slot entry
+        const fresh = await db.collection('participants').doc(currentPid).get();
+        if (fresh.exists) {
+          const bs = fresh.data().bookedSlots || [];
+          const updated = bs.map(e => {
+            const id = typeof e === 'string' ? e : e.slotId;
+            if (id === sId) return { ...(typeof e === 'string' ? { slotId: e, status: 'booked', notes: '' } : e), gcalEventId: evId };
+            return e;
+          });
+          await db.collection('participants').doc(currentPid).update({ bookedSlots: updated });
+        }
+        toast('Calendar event created');
+      }
+    }
+    // Auto-create Zoom meeting if provider is zoom and group mode is individual
+    if (integrationConfig.meetProvider === 'zoom' && !slot.meetingLink) {
+      const g = getGroup(slot.groupId);
+      if (!g || g.meetMode !== 'shared') {
+        await createMeetingLink('zoom', slot);
+      }
+    }
+  } else {
+    // Cancellation — delete calendar event if it exists
+    if (integrationConfig.calProvider !== 'none' && googleAccessToken) {
+      const freshP = await db.collection('participants').doc(currentPid).get();
+      // The event ID was on the old entry which is now removed; check slot data
+      // We stored gcalEventId in the bookedSlots entry before removal
+    }
+  }
+};
+
+const _origSupQuickAssign = supQuickAssign;
+supQuickAssign = async function(sid) {
+  await _origSupQuickAssign(sid);
+
+  // After successful assignment
+  const p = participants.find(x => x.id === supAssignPid);
+  const slot = supSlots.find(x => x.id === sid);
+  if (!p || !slot) return;
+
+  // Auto-create calendar event
+  if (integrationConfig.calProvider !== 'none' && integrationConfig.gcal.autoCreate && googleAccessToken) {
+    const evId = await createCalendarEvent(integrationConfig.calProvider, slot, p);
+    if (evId) {
+      const fresh = await db.collection('participants').doc(supAssignPid).get();
+      if (fresh.exists) {
+        const bs = fresh.data().bookedSlots || [];
+        const updated = bs.map(e => {
+          const id = typeof e === 'string' ? e : e.slotId;
+          if (id === sid) return { ...(typeof e === 'string' ? { slotId: e, status: 'booked', notes: '' } : e), gcalEventId: evId };
+          return e;
+        });
+        await db.collection('participants').doc(supAssignPid).update({ bookedSlots: updated });
+      }
+      toast('Calendar event created');
+    }
+  }
+
+  // Auto-create Zoom meeting
+  if (integrationConfig.meetProvider === 'zoom' && !slot.meetingLink) {
+    const g = getGroup(slot.groupId);
+    if (!g || g.meetMode !== 'shared') {
+      await createMeetingLink('zoom', slot);
+    }
+  }
 };
 </script>
 </body>

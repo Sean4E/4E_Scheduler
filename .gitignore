@@ -1,0 +1,4 @@
+GitIgnore/
+functions/node_modules/
+.env
+*.secret
