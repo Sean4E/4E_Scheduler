@@ -1378,14 +1378,13 @@ function showBookingConfirmation(slot, participantName) {
 // ══════════════════════════════════════════════════════
 //  PIN FUNCTIONS
 // ══════════════════════════════════════════════════════
+let sessionToken = null; // server-issued session token
+
 async function goAdmin() {
   if (adminAuthed) { startAdminListeners(); renderAdminShell(); showScreen('admin'); return; }
-  if (isLockedOut('admin')) return;
   pinBuffer = '';
-  const snap = await db.collection('config').doc('admin').get();
-  const hasPIN = snap.exists && snap.data().pinHash;
-  document.getElementById('pinTitle').textContent = hasPIN ? 'Enter PIN' : 'Create PIN';
-  document.getElementById('pinSub').textContent   = hasPIN ? 'Enter your 4-digit admin PIN.' : 'Set a 4-digit PIN to protect the admin dashboard.';
+  document.getElementById('pinTitle').textContent = 'Enter PIN';
+  document.getElementById('pinSub').textContent = 'Enter your 4-digit admin PIN.';
   updatePinDots('pinDots', 0);
   document.getElementById('pinErr').style.display = 'none';
   showScreen('pin-screen');
@@ -1414,41 +1413,40 @@ function pinDel() {
 }
 
 async function processPIN() {
-  if (isLockedOut('admin')) return;
-  const snap = await db.collection('config').doc('admin').get();
-  const hasPIN = snap.exists && snap.data().pinHash;
+  try {
+    const resp = await fetch(FUNCTIONS_BASE + '/verifyAdminPin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: pinBuffer }),
+    });
+    const data = await resp.json();
 
-  if (!hasPIN) {
-    const hash = await sha256(pinBuffer);
-    await db.collection('config').doc('admin').set({ pinHash: hash });
-    adminAuthed = true;
-    clearPinAttempts('admin');
-    resetIdleTimer();
-    startAdminListeners();
-    renderAdminShell();
-    showScreen('admin');
-    toast('PIN set ✓');
-  } else {
-    const hash = await sha256(pinBuffer);
-    if (hash === snap.data().pinHash) {
+    if (data.success) {
+      sessionToken = data.token;
       adminAuthed = true;
-      clearPinAttempts('admin');
       resetIdleTimer();
       startAdminListeners();
       renderAdminShell();
       showScreen('admin');
+      toast(data.isNew ? 'PIN set ✓' : 'Welcome back');
     } else {
-      const data = recordPinAttempt('admin');
       const dots = document.getElementById('pinDots');
       dots.classList.add('shake');
       setTimeout(() => dots.classList.remove('shake'), 400);
       pinBuffer = '';
       updatePinDots('pinDots', 0);
       const err = document.getElementById('pinErr');
-      const remaining = MAX_PIN_ATTEMPTS - (data.count || 0);
-      err.textContent = data.lockUntil ? 'Too many attempts — locked for 5 minutes' : `Incorrect PIN (${remaining} attempt${remaining!==1?'s':''} left)`;
+      if (resp.status === 429) {
+        err.textContent = 'Too many attempts — locked for 5 minutes';
+      } else {
+        err.textContent = data.remaining !== undefined ? `Incorrect PIN (${data.remaining} attempt${data.remaining!==1?'s':''} left)` : 'Incorrect PIN';
+      }
       err.style.display = 'block';
     }
+  } catch(e) {
+    toast('Cannot reach server — check your connection', 'err');
+    pinBuffer = '';
+    updatePinDots('pinDots', 0);
   }
 }
 
@@ -1497,33 +1495,41 @@ function supPinDel() {
 }
 
 async function processSupPIN() {
-  if (isLockedOut('supervisor')) return;
-  const hash = await sha256(supPinBuffer);
-  const snap = await db.collection('groups').get();
-  const allGroups = snap.docs.map(d => ({id: d.id, ...d.data()}));
-  const match = allGroups.find(g => g.supervisorPinHash === hash);
+  try {
+    const resp = await fetch(FUNCTIONS_BASE + '/verifySupervisorPin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: supPinBuffer }),
+    });
+    const data = await resp.json();
 
-  if (match) {
-    supAuthed = true;
-    supGroupId = match.id;
-    groups = allGroups;
-    clearPinAttempts('supervisor');
-    resetIdleTimer();
-    startSupListeners();
-    renderSupShell();
-    showScreen('supervisor');
-    toast(`Welcome, ${match.name} supervisor`);
-  } else {
-    const data = recordPinAttempt('supervisor');
-    const dots = document.getElementById('supPinDots');
-    dots.classList.add('shake');
-    setTimeout(() => dots.classList.remove('shake'), 400);
+    if (data.success) {
+      supAuthed = true;
+      supGroupId = data.groupId;
+      sessionToken = data.token;
+      resetIdleTimer();
+      startSupListeners();
+      renderSupShell();
+      showScreen('supervisor');
+      toast(`Welcome, ${data.groupName} supervisor`);
+    } else {
+      const dots = document.getElementById('supPinDots');
+      dots.classList.add('shake');
+      setTimeout(() => dots.classList.remove('shake'), 400);
+      supPinBuffer = '';
+      updateSupPinDots(0);
+      const err = document.getElementById('supPinErr');
+      if (resp.status === 429) {
+        err.textContent = 'Too many attempts — locked for 5 minutes';
+      } else {
+        err.textContent = data.remaining !== undefined ? `PIN not recognised (${data.remaining} attempt${data.remaining!==1?'s':''} left)` : 'PIN not recognised';
+      }
+      err.style.display = 'block';
+    }
+  } catch(e) {
+    toast('Cannot reach server — check your connection', 'err');
     supPinBuffer = '';
     updateSupPinDots(0);
-    const err = document.getElementById('supPinErr');
-    const remaining = MAX_PIN_ATTEMPTS - (data.count || 0);
-    err.textContent = data.lockUntil ? 'Too many attempts — locked for 5 minutes' : `PIN not recognised (${remaining} attempt${remaining!==1?'s':''} left)`;
-    err.style.display = 'block';
   }
 }
 
@@ -3288,11 +3294,11 @@ async function deleteCalevent(provider, eventId) {
   return null;
 }
 
-async function createMeetingLink(provider, slot) {
+async function createMeetingLink(provider, slot, participantName) {
   if (provider === 'zoom') {
     const { start } = slotToDateTimes(slot);
-    const g = getGroup(slot.groupId);
-    const topic = '4E Workshop' + (g ? ' — ' + g.name : '');
+    const who = participantName || getBooker(slot.id)?.name || 'Session';
+    const topic = '4E Workshop — ' + who;
     const result = await createZoomMeeting(topic, start.toISOString(), slot.duration || 30);
     if (result) {
       // Store the meeting link on the slot
@@ -3350,7 +3356,8 @@ toggleBook = async function(sId) {
     if (integrationConfig.meetProvider === 'zoom' && !slot.meetingLink) {
       const g = getGroup(slot.groupId);
       if (!g || g.meetMode !== 'shared') {
-        await createMeetingLink('zoom', slot);
+        const bp = participants.find(x => x.id === currentPid);
+        await createMeetingLink('zoom', slot, bp?.name);
       }
     }
   } else {
@@ -3394,7 +3401,7 @@ supQuickAssign = async function(sid) {
   if (integrationConfig.meetProvider === 'zoom' && !slot.meetingLink) {
     const g = getGroup(slot.groupId);
     if (!g || g.meetMode !== 'shared') {
-      await createMeetingLink('zoom', slot);
+      await createMeetingLink('zoom', slot, p.name);
     }
   }
 };

@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // CONFIG — admin PIN hash is NEVER readable by clients
+    // PIN verification happens server-side via Cloud Functions
+    match /config/admin {
+      allow read: if false;
+      allow write: if false;
+      // Only Cloud Functions (admin SDK) can read/write this
+    }
+
+    // Other config (emailjs, integrations, zoom) — read/write for app use
+    match /config/{doc} {
+      allow read: if doc != 'admin';
+      allow write: if doc != 'admin';
+    }
+
+    // SESSIONS — server-issued tokens, read-only by clients
+    match /sessions/{token} {
+      allow read: if true;
+      allow write: if false;
+      // Only Cloud Functions can create sessions
+    }
+
+    // GROUPS — readable by all (needed for booking view)
+    // Writable (admin manages groups)
+    match /groups/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // SLOTS — readable by all (needed for booking view)
+    // Writable (admin/supervisor create and update slots)
+    match /slots/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // PARTICIPANTS — get by ID (participant needs their code)
+    // List all (admin/supervisor need to see all participants)
+    // Write (admin/supervisor add/edit, participant books)
+    match /participants/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}
