@@ -15,11 +15,10 @@ const fetch = require("node-fetch");
 admin.initializeApp();
 const db = admin.firestore();
 
-// Zoom credentials — prefer Firebase config, fallback to hardcoded for initial deploy
-const config = functions.config();
-const ZOOM_ACCOUNT_ID    = config.zoom?.account_id    || "wDoYqXjNQ5upGx6If9EQsw";
-const ZOOM_CLIENT_ID     = config.zoom?.client_id     || "9fw0xTu0StKj2OPZpP6fVQ";
-const ZOOM_CLIENT_SECRET = config.zoom?.client_secret  || "Nog9ZuKLVHQ29gm4cN7B0XYrLlsnU6PQ";
+// Zoom credentials from .env file (deployed with functions, never in client code)
+const ZOOM_ACCOUNT_ID    = process.env.ZOOM_ACCOUNT_ID;
+const ZOOM_CLIENT_ID     = process.env.ZOOM_CLIENT_ID;
+const ZOOM_CLIENT_SECRET = process.env.ZOOM_CLIENT_SECRET;
 
 // Allowed origins — restrict to your deployed domain
 const ALLOWED_ORIGINS = [
@@ -91,7 +90,7 @@ async function verifyRequest(req, res) {
 // ──────────────────────────────────────────────────────
 //  zoomStatus — Check if Zoom is reachable
 // ──────────────────────────────────────────────────────
-exports.zoomStatus = functions.https.onRequest(async (req, res) => {
+exports.zoomStatus = functions.region("europe-west1").https.onRequest(async (req, res) => {
   const ok = await verifyRequest(req, res);
   if (!ok) return;
 
@@ -120,7 +119,7 @@ exports.zoomStatus = functions.https.onRequest(async (req, res) => {
 // ──────────────────────────────────────────────────────
 //  zoomCreateMeeting — Create a scheduled Zoom meeting
 // ──────────────────────────────────────────────────────
-exports.zoomCreateMeeting = functions.https.onRequest(async (req, res) => {
+exports.zoomCreateMeeting = functions.region("europe-west1").https.onRequest(async (req, res) => {
   const ok = await verifyRequest(req, res);
   if (!ok) return;
 
@@ -181,7 +180,7 @@ exports.zoomCreateMeeting = functions.https.onRequest(async (req, res) => {
 // ──────────────────────────────────────────────────────
 //  zoomDeleteMeeting — Delete/cancel a Zoom meeting
 // ──────────────────────────────────────────────────────
-exports.zoomDeleteMeeting = functions.https.onRequest(async (req, res) => {
+exports.zoomDeleteMeeting = functions.region("europe-west1").https.onRequest(async (req, res) => {
   const ok = await verifyRequest(req, res);
   if (!ok) return;
 

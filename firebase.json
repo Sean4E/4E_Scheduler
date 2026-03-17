@@ -3,7 +3,8 @@
     {
       "source": "functions",
       "codebase": "default",
-      "runtime": "nodejs18"
+      "runtime": "nodejs18",
+      "region": "europe-west1"
     }
   ]
 }
