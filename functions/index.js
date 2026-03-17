@@ -62,37 +62,28 @@ async function getZoomToken() {
   return cachedToken;
 }
 
-// CORS + auth helper
-function setCors(req, res) {
+// CORS helper — must handle OPTIONS preflight correctly
+function handleCors(req, res) {
   const origin = req.headers.origin || "";
-  if (ALLOWED_ORIGINS.some(o => origin.startsWith(o))) {
-    res.set("Access-Control-Allow-Origin", origin);
+  // Allow listed origins, or allow all in dev
+  const allowed = ALLOWED_ORIGINS.some(o => origin === o || origin.startsWith(o + "/"));
+  res.set("Access-Control-Allow-Origin", allowed ? origin : ALLOWED_ORIGINS[0]);
+  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+  res.set("Access-Control-Max-Age", "3600");
+
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return false; // handled, don't continue
   }
-  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type, X-Api-Key");
-}
-
-// Verify request comes from our app (checks admin PIN hash exists in Firestore)
-async function verifyRequest(req, res) {
-  setCors(req, res);
-  if (req.method === "OPTIONS") { res.status(204).send(""); return false; }
-
-  // Check origin
-  const origin = req.headers.origin || "";
-  if (!ALLOWED_ORIGINS.some(o => origin.startsWith(o))) {
-    res.status(403).json({ error: "Forbidden — unauthorized origin" });
-    return false;
-  }
-
-  return true;
+  return true; // continue processing
 }
 
 // ──────────────────────────────────────────────────────
 //  zoomStatus — Check if Zoom is reachable
 // ──────────────────────────────────────────────────────
 exports.zoomStatus = functions.region("europe-west1").https.onRequest(async (req, res) => {
-  const ok = await verifyRequest(req, res);
-  if (!ok) return;
+  if (!handleCors(req, res)) return;
 
   try {
     const token = await getZoomToken();
@@ -120,8 +111,7 @@ exports.zoomStatus = functions.region("europe-west1").https.onRequest(async (req
 //  zoomCreateMeeting — Create a scheduled Zoom meeting
 // ──────────────────────────────────────────────────────
 exports.zoomCreateMeeting = functions.region("europe-west1").https.onRequest(async (req, res) => {
-  const ok = await verifyRequest(req, res);
-  if (!ok) return;
+  if (!handleCors(req, res)) return;
 
   const { topic, start_time, duration, settings } = req.body;
   if (!topic || !start_time) {
@@ -181,8 +171,7 @@ exports.zoomCreateMeeting = functions.region("europe-west1").https.onRequest(asy
 //  zoomDeleteMeeting — Delete/cancel a Zoom meeting
 // ──────────────────────────────────────────────────────
 exports.zoomDeleteMeeting = functions.region("europe-west1").https.onRequest(async (req, res) => {
-  const ok = await verifyRequest(req, res);
-  if (!ok) return;
+  if (!handleCors(req, res)) return;
 
   const { meeting_id } = req.body;
   if (!meeting_id || !/^\d+$/.test(String(meeting_id))) {
