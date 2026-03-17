@@ -817,7 +817,7 @@ input::placeholder{color:var(--text-dim)}
         </div>
       </div>
       <!-- ── INTEGRATIONS ── -->
-      <div class="card" style="padding:24px;max-width:540px;margin-bottom:20px">
+      <div class="card" style="padding:24px;max-width:600px;margin-bottom:20px">
         <div class="eyebrow" style="color:var(--cyan);margin-bottom:16px">INTEGRATIONS</div>
         <h3 style="font-size:16px;font-weight:700;margin-bottom:16px">Calendar & Meeting Providers</h3>
 
@@ -827,26 +827,47 @@ input::placeholder{color:var(--text-dim)}
             <span style="font-size:18px">📅</span>
             <div style="flex:1">
               <div style="font-size:14px;font-weight:700">Google Calendar</div>
-              <div id="gcalStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Checking…</div>
+              <div id="gcalStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Checking...</div>
             </div>
             <button class="btn-g btn-sm" id="btnGcalRefresh" onclick="checkGcalServerStatus()">Refresh</button>
           </div>
           <div id="gcalSettings">
-            <div class="toggle-wrap" onclick="toggleGcalAutoCreate()" style="margin-bottom:10px">
+            <div class="toggle-wrap" onclick="toggleGcalAutoCreate()" style="margin-bottom:12px">
               <div class="toggle-track" id="gcalAutoToggle"><div class="toggle-thumb"></div></div>
               <span class="toggle-label" style="font-size:12px">Auto-create events on booking</span>
+            </div>
+            <div class="emailjs-field">
+              <label>EVENT COLOUR</label>
+              <div class="color-palette" id="gcalColorPalette" style="margin-top:4px;margin-bottom:4px"></div>
             </div>
             <div class="emailjs-field">
               <label>TITLE TEMPLATE</label>
               <input type="text" id="gcalTitleTemplate" placeholder="4E Workshop — {participant}" value="4E Workshop — {participant}" onchange="saveIntegrationSettings()">
             </div>
             <div class="emailjs-field">
-              <label>REMINDER (MINUTES BEFORE)</label>
-              <input type="number" id="gcalReminderMins" value="30" min="0" max="1440" style="width:100px" onchange="saveIntegrationSettings()">
-            </div>
-            <div class="emailjs-field">
               <label>DESCRIPTION TEMPLATE</label>
               <input type="text" id="gcalDescTemplate" placeholder="{group} — {label}" value="{group} — {label}" onchange="saveIntegrationSettings()">
+            </div>
+            <div class="form-row" style="margin-bottom:10px">
+              <div class="inline-field">
+                <label>REMINDER (MINUTES)</label>
+                <input type="number" id="gcalReminderMins" value="30" min="0" max="1440" style="width:100px" onchange="saveIntegrationSettings()">
+              </div>
+              <div class="inline-field">
+                <label>VISIBILITY</label>
+                <select id="gcalVisibility" onchange="saveIntegrationSettings()" style="width:140px">
+                  <option value="default">Default</option>
+                  <option value="public">Public</option>
+                  <option value="private">Private</option>
+                </select>
+              </div>
+              <div class="inline-field">
+                <label>SHOW AS</label>
+                <select id="gcalShowAs" onchange="saveIntegrationSettings()" style="width:120px">
+                  <option value="busy">Busy</option>
+                  <option value="free">Free</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -860,7 +881,7 @@ input::placeholder{color:var(--text-dim)}
               <div id="zoomStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Not connected</div>
             </div>
             <button class="btn-p btn-sm" id="btnZoomConnect" onclick="connectZoom()">Activate</button>
-            <button class="btn-g btn-sm" id="btnZoomDisconnect" onclick="disconnectZoom()" style="display:none">Disconnect</button>
+            <button class="btn-g btn-sm" id="btnZoomRefresh" onclick="connectZoom()" style="display:none">Refresh</button>
           </div>
           <div id="zoomSettings" style="display:none">
             <div class="toggle-wrap" onclick="toggleZoomWaitingRoom()" style="margin-bottom:10px">
@@ -875,27 +896,58 @@ input::placeholder{color:var(--text-dim)}
               <div class="toggle-track" id="zoomAutoRecordToggle"><div class="toggle-thumb"></div></div>
               <span class="toggle-label" style="font-size:12px">Auto-record meetings</span>
             </div>
+            <div class="toggle-wrap" onclick="toggleZoomMuteOnEntry()" style="margin-bottom:10px">
+              <div class="toggle-track" id="zoomMuteOnEntryToggle"><div class="toggle-thumb"></div></div>
+              <span class="toggle-label" style="font-size:12px">Mute participants on entry</span>
+            </div>
+            <div class="toggle-wrap" onclick="toggleZoomJoinBeforeHost()" style="margin-bottom:10px">
+              <div class="toggle-track" id="zoomJoinBeforeHostToggle"><div class="toggle-thumb"></div></div>
+              <span class="toggle-label" style="font-size:12px">Join before host</span>
+            </div>
+            <div class="emailjs-field">
+              <label>DEFAULT MEETING DURATION</label>
+              <select id="zoomDefaultDuration" onchange="saveIntegrationSettings()" style="width:140px">
+                <option value="15">15 min</option>
+                <option value="20">20 min</option>
+                <option value="30" selected>30 min</option>
+                <option value="45">45 min</option>
+                <option value="60">60 min</option>
+                <option value="90">90 min</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <!-- Outlook / Teams (Coming Soon) -->
-        <div style="background:var(--glass-mid);border:1px solid var(--border);border-radius:10px;padding:16px;opacity:.5">
+        <!-- Outlook Calendar (Coming Soon) -->
+        <div style="background:var(--glass-mid);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;opacity:.4;pointer-events:none">
           <div style="display:flex;align-items:center;gap:10px">
-            <span style="font-size:18px">📧</span>
+            <span style="font-size:18px">📆</span>
             <div style="flex:1">
-              <div style="font-size:14px;font-weight:700">Outlook Calendar / Microsoft Teams</div>
+              <div style="font-size:14px;font-weight:700">Outlook Calendar</div>
               <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Coming soon</div>
             </div>
             <button class="btn-g btn-sm" disabled>Connect</button>
           </div>
         </div>
 
-        <!-- Calendar Event Defaults -->
+        <!-- Microsoft Teams (Coming Soon) -->
+        <div style="background:var(--glass-mid);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;opacity:.4;pointer-events:none">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">💬</span>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:700">Microsoft Teams</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Coming soon</div>
+            </div>
+            <button class="btn-g btn-sm" disabled>Connect</button>
+          </div>
+        </div>
+
+        <!-- General meeting settings -->
         <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-          <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">ACTIVE PROVIDER</div>
-          <div class="form-row">
+          <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">GENERAL SETTINGS</div>
+          <div class="form-row" style="margin-bottom:14px">
             <div class="inline-field" style="flex:1">
-              <label>CALENDAR</label>
+              <label>CALENDAR PROVIDER</label>
               <select id="intCalProvider" onchange="saveIntegrationSettings()" style="width:180px">
                 <option value="none">None</option>
                 <option value="google">Google Calendar</option>
@@ -903,13 +955,17 @@ input::placeholder{color:var(--text-dim)}
               </select>
             </div>
             <div class="inline-field" style="flex:1">
-              <label>MEETINGS</label>
+              <label>MEETING PROVIDER</label>
               <select id="intMeetProvider" onchange="saveIntegrationSettings()" style="width:180px">
                 <option value="none">None</option>
                 <option value="zoom">Zoom</option>
                 <option value="teams" disabled>Teams (coming soon)</option>
               </select>
             </div>
+          </div>
+          <div class="toggle-wrap" onclick="toggleAutoSendEmail()" style="margin-top:8px">
+            <div class="toggle-track" id="autoSendEmailToggle"><div class="toggle-thumb"></div></div>
+            <span class="toggle-label" style="font-size:12px">Auto-send email invite on booking</span>
           </div>
         </div>
       </div>
@@ -3100,9 +3156,9 @@ startAdminListeners = function() {
 
 // --- Integration config state ---
 let integrationConfig = {
-  calProvider: 'none', meetProvider: 'none',
-  gcal: { autoCreate: false, titleTemplate: '4E Workshop — {participant}', reminderMins: 30, descTemplate: '{group} — {label}' },
-  zoom: { waitingRoom: true, passcode: true, autoRecord: false },
+  calProvider: 'none', meetProvider: 'none', autoSendEmail: false,
+  gcal: { autoCreate: false, titleTemplate: '4E Workshop — {participant}', reminderMins: 30, descTemplate: '{group} — {label}', eventColor: '', visibility: 'default', showAs: 'busy' },
+  zoom: { waitingRoom: true, passcode: true, autoRecord: false, muteOnEntry: false, joinBeforeHost: true, defaultDuration: 30 },
 };
 
 let googleAccessToken = null; // session-only, never persisted
@@ -3119,23 +3175,37 @@ const FUNCTIONS_BASE   = 'https://europe-west1-scheduler4e.cloudfunctions.net';
 async function loadIntegrationSettings() {
   try {
     const doc = await db.collection('config').doc('integrations').get();
-    if (doc.exists) integrationConfig = { ...integrationConfig, ...doc.data() };
+    if (doc.exists) {
+      const d = doc.data();
+      integrationConfig = {
+        ...integrationConfig, ...d,
+        gcal: { ...integrationConfig.gcal, ...(d.gcal || {}) },
+        zoom: { ...integrationConfig.zoom, ...(d.zoom || {}) },
+      };
+    }
     updateIntegrationUI();
   } catch(e) { console.error('Error loading integration settings:', e); }
 }
 
 async function saveIntegrationSettings() {
-  // Read form values
+  // Read form values — Google Calendar
   const t = document.getElementById('gcalTitleTemplate');
   const r = document.getElementById('gcalReminderMins');
   const d = document.getElementById('gcalDescTemplate');
+  const vis = document.getElementById('gcalVisibility');
+  const showAs = document.getElementById('gcalShowAs');
   const cp = document.getElementById('intCalProvider');
   const mp = document.getElementById('intMeetProvider');
+  const zDur = document.getElementById('zoomDefaultDuration');
   if (t) integrationConfig.gcal.titleTemplate = t.value.trim() || '4E Workshop — {participant}';
   if (r) integrationConfig.gcal.reminderMins = parseInt(r.value) || 30;
   if (d) integrationConfig.gcal.descTemplate = d.value.trim() || '{group} — {label}';
+  if (vis) integrationConfig.gcal.visibility = vis.value;
+  if (showAs) integrationConfig.gcal.showAs = showAs.value;
   if (cp) integrationConfig.calProvider = cp.value;
   if (mp) integrationConfig.meetProvider = mp.value;
+  // Zoom duration
+  if (zDur) integrationConfig.zoom.defaultDuration = parseInt(zDur.value) || 30;
   try {
     await db.collection('config').doc('integrations').set(integrationConfig);
     updateIntegrationUI();
@@ -3145,9 +3215,6 @@ async function saveIntegrationSettings() {
 
 function updateIntegrationUI() {
   // Google Calendar status
-  const gcalSt = document.getElementById('gcalStatus');
-  const btnC = document.getElementById('btnGcalConnect');
-  const btnD = document.getElementById('btnGcalDisconnect');
   const gcalSet = document.getElementById('gcalSettings');
   // Google Calendar is now server-side (service account) — always show settings
   if (gcalSet) gcalSet.style.display = 'block';
@@ -3161,6 +3228,13 @@ function updateIntegrationUI() {
   if (rf && !rf.matches(':focus')) rf.value = integrationConfig.gcal.reminderMins;
   const df = document.getElementById('gcalDescTemplate');
   if (df && !df.matches(':focus')) df.value = integrationConfig.gcal.descTemplate;
+  // Gcal visibility & showAs
+  const vis = document.getElementById('gcalVisibility');
+  if (vis && !vis.matches(':focus')) vis.value = integrationConfig.gcal.visibility || 'default';
+  const sa = document.getElementById('gcalShowAs');
+  if (sa && !sa.matches(':focus')) sa.value = integrationConfig.gcal.showAs || 'busy';
+  // Gcal color palette
+  renderGcalColorPalette();
 
   // Zoom status
   updateZoomStatusUI();
@@ -3172,18 +3246,60 @@ function updateIntegrationUI() {
   if (zpc) zpc.classList.toggle('on', integrationConfig.zoom.passcode);
   const zar = document.getElementById('zoomAutoRecordToggle');
   if (zar) zar.classList.toggle('on', integrationConfig.zoom.autoRecord);
+  const zme = document.getElementById('zoomMuteOnEntryToggle');
+  if (zme) zme.classList.toggle('on', integrationConfig.zoom.muteOnEntry);
+  const zjbh = document.getElementById('zoomJoinBeforeHostToggle');
+  if (zjbh) zjbh.classList.toggle('on', integrationConfig.zoom.joinBeforeHost);
+  const zDur = document.getElementById('zoomDefaultDuration');
+  if (zDur && !zDur.matches(':focus')) zDur.value = integrationConfig.zoom.defaultDuration || 30;
 
   // Provider selects
   const cp = document.getElementById('intCalProvider');
   if (cp && !cp.matches(':focus')) cp.value = integrationConfig.calProvider || 'none';
   const mp = document.getElementById('intMeetProvider');
   if (mp && !mp.matches(':focus')) mp.value = integrationConfig.meetProvider || 'none';
+
+  // Auto-send email toggle
+  const aseToggle = document.getElementById('autoSendEmailToggle');
+  if (aseToggle) aseToggle.classList.toggle('on', integrationConfig.autoSendEmail);
+}
+
+// Google Calendar color palette (11 colors)
+const GCAL_COLORS = [
+  { id: '1',  name: 'Lavender',   hex: '#7986cb' },
+  { id: '2',  name: 'Sage',       hex: '#33b679' },
+  { id: '3',  name: 'Grape',      hex: '#8e24aa' },
+  { id: '4',  name: 'Flamingo',   hex: '#e67c73' },
+  { id: '5',  name: 'Banana',     hex: '#f6bf26' },
+  { id: '6',  name: 'Tangerine',  hex: '#f4511e' },
+  { id: '7',  name: 'Peacock',    hex: '#039be5' },
+  { id: '8',  name: 'Graphite',   hex: '#616161' },
+  { id: '9',  name: 'Blueberry',  hex: '#3f51b5' },
+  { id: '10', name: 'Basil',      hex: '#0b8043' },
+  { id: '11', name: 'Tomato',     hex: '#d50000' },
+];
+
+function renderGcalColorPalette() {
+  const wrap = document.getElementById('gcalColorPalette');
+  if (!wrap) return;
+  const current = integrationConfig.gcal.eventColor || '';
+  wrap.innerHTML = '<div class="color-swatch' + (!current ? ' picked' : '') + '" style="background:var(--glass-mid);border:2px solid var(--border);position:relative" title="Default (none)" onclick="pickGcalColor(\'\')">' +
+    (!current ? '<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-mid)">--</span>' : '') +
+    '</div>' +
+    GCAL_COLORS.map(c =>
+      '<div class="color-swatch' + (current === c.id ? ' picked' : '') + '" style="background:' + c.hex + '" title="' + c.name + '" onclick="pickGcalColor(\'' + c.id + '\')"></div>'
+    ).join('');
+}
+
+function pickGcalColor(id) {
+  integrationConfig.gcal.eventColor = id;
+  saveIntegrationSettings();
 }
 
 async function updateZoomStatusUI() {
   const zoomSt = document.getElementById('zoomStatus');
   const btnZC = document.getElementById('btnZoomConnect');
-  const btnZD = document.getElementById('btnZoomDisconnect');
+  const btnZR = document.getElementById('btnZoomRefresh');
   const zoomSet = document.getElementById('zoomSettings');
   try {
     const doc = await db.collection('config').doc('zoom').get();
@@ -3191,12 +3307,12 @@ async function updateZoomStatusUI() {
       const zEmail = doc.data().email || '';
       if (zoomSt) zoomSt.innerHTML = `<span style="color:var(--green)">Connected</span>${zEmail ? ` <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">${zEmail}</span>` : ''}`;
       if (btnZC) btnZC.style.display = 'none';
-      if (btnZD) btnZD.style.display = '';
+      if (btnZR) btnZR.style.display = '';
       if (zoomSet) zoomSet.style.display = 'block';
     } else {
       if (zoomSt) zoomSt.textContent = 'Not connected';
       if (btnZC) btnZC.style.display = '';
-      if (btnZD) btnZD.style.display = 'none';
+      if (btnZR) btnZR.style.display = 'none';
       if (zoomSet) zoomSet.style.display = 'none';
     }
   } catch(e) {
@@ -3219,6 +3335,18 @@ function toggleZoomPasscode() {
 }
 function toggleZoomAutoRecord() {
   integrationConfig.zoom.autoRecord = !integrationConfig.zoom.autoRecord;
+  saveIntegrationSettings();
+}
+function toggleZoomMuteOnEntry() {
+  integrationConfig.zoom.muteOnEntry = !integrationConfig.zoom.muteOnEntry;
+  saveIntegrationSettings();
+}
+function toggleZoomJoinBeforeHost() {
+  integrationConfig.zoom.joinBeforeHost = !integrationConfig.zoom.joinBeforeHost;
+  saveIntegrationSettings();
+}
+function toggleAutoSendEmail() {
+  integrationConfig.autoSendEmail = !integrationConfig.autoSendEmail;
   saveIntegrationSettings();
 }
 

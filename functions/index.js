@@ -25,6 +25,7 @@ const ZOOM_ACCOUNT_ID    = process.env.ZOOM_ACCOUNT_ID;
 const ZOOM_CLIENT_ID     = process.env.ZOOM_CLIENT_ID;
 const ZOOM_CLIENT_SECRET = process.env.ZOOM_CLIENT_SECRET;
 const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || "primary";
+const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY;
 
 const ALLOWED_ORIGINS = [
   "https://sean4e.github.io",
@@ -85,7 +86,7 @@ function getCalendar() {
   return calendarClient;
 }
 
-async function createCalendarEvent({ title, description, startTime, endTime, attendeeEmail, location, reminderMinutes }) {
+async function createCalendarEvent({ title, description, startTime, endTime, attendeeEmail, location, reminderMinutes, colorId, visibility, showAs }) {
   try {
     const calendar = getCalendar();
     const event = {
@@ -98,6 +99,10 @@ async function createCalendarEvent({ title, description, startTime, endTime, att
     // Note: Service accounts on personal Gmail can't add attendees (requires Workspace)
     // The event is created on admin's calendar. Participant gets notified via EmailJS or .ics download.
     if (location) event.location = location;
+    // Apply optional calendar settings
+    if (colorId) event.colorId = String(colorId);
+    if (visibility && visibility !== "default") event.visibility = visibility;
+    if (showAs) event.transparency = showAs === "free" ? "transparent" : "opaque";
 
     const res = await calendar.events.insert({
       calendarId: GOOGLE_CALENDAR_ID,
@@ -143,14 +148,15 @@ async function getZoomToken() {
   return zoomToken;
 }
 
-async function createZoomMeetingServer({ topic, startTime, duration, waitingRoom, passcode, autoRecord }) {
+async function createZoomMeetingServer({ topic, startTime, duration, waitingRoom, passcode, autoRecord, muteOnEntry, joinBeforeHost }) {
   try {
     const token = await getZoomToken();
     const settings = {
       waiting_room: waitingRoom ?? true,
       meeting_authentication: false,
       auto_recording: autoRecord ? "cloud" : "none",
-      join_before_host: true,
+      join_before_host: joinBeforeHost ?? true,
+      mute_upon_entry: muteOnEntry ?? false,
     };
     if (passcode) settings.passcode = crypto.randomBytes(3).toString("hex");
 
@@ -219,6 +225,7 @@ exports.onBookingChange = onDocumentWritten(
 
       // Create Zoom meeting if enabled and no existing link
       let finalMeetLink = meetLink;
+      const zoomSettings = config.zoom || {};
       if (zoomEnabled && !finalMeetLink && zoomConfig.connected) {
         const meetMode = group?.meetMode || "individual";
         if (meetMode === "individual") {
@@ -226,9 +233,11 @@ exports.onBookingChange = onDocumentWritten(
             topic: "4E Workshop — " + after.name,
             startTime: start.toISOString(),
             duration: dur,
-            waitingRoom: zoomConfig.waitingRoom ?? true,
-            passcode: zoomConfig.passcode ?? true,
-            autoRecord: zoomConfig.autoRecord ?? false,
+            waitingRoom: zoomSettings.waitingRoom ?? zoomConfig.waitingRoom ?? true,
+            passcode: zoomSettings.passcode ?? zoomConfig.passcode ?? true,
+            autoRecord: zoomSettings.autoRecord ?? zoomConfig.autoRecord ?? false,
+            muteOnEntry: zoomSettings.muteOnEntry ?? false,
+            joinBeforeHost: zoomSettings.joinBeforeHost ?? true,
           });
           if (zoom) {
             finalMeetLink = zoom.joinUrl;
@@ -255,6 +264,9 @@ exports.onBookingChange = onDocumentWritten(
           attendeeEmail: after.email || null,
           location: finalMeetLink || null,
           reminderMinutes: config.gcal?.reminderMinutes || 30,
+          colorId: config.gcal?.eventColor || null,
+          visibility: config.gcal?.visibility || null,
+          showAs: config.gcal?.showAs || null,
         });
 
         if (result) {
@@ -269,6 +281,96 @@ exports.onBookingChange = onDocumentWritten(
             return e;
           });
           await db.collection("participants").doc(participantId).update({ bookedSlots: updatedSlots });
+        }
+      }
+
+      // Send email invite via EmailJS if enabled
+      if (config.autoSendEmail && after.email) {
+        try {
+          const ejsDoc = await db.collection("config").doc("emailjs").get();
+          const ejs = ejsDoc.exists ? ejsDoc.data() : {};
+          if (ejs.enabled && ejs.serviceId && ejs.templateId && ejs.publicKey) {
+            // Format date and time for email
+            const dateStr = start.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Dublin" });
+            const timeStr = start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Dublin" });
+
+            // Generate .ics content
+            const pad2 = n => String(n).padStart(2, "0");
+            const icsDate = d => d.getUTCFullYear() + pad2(d.getUTCMonth()+1) + pad2(d.getUTCDate()) + "T" + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + pad2(d.getUTCSeconds()) + "Z";
+            const uid = slotId + "-" + participantId + "@4escheduler";
+            const icsContent = [
+              "BEGIN:VCALENDAR",
+              "VERSION:2.0",
+              "PRODID:-//4E Workshop Scheduler//EN",
+              "CALSCALE:GREGORIAN",
+              "METHOD:REQUEST",
+              "BEGIN:VEVENT",
+              "UID:" + uid,
+              "DTSTART:" + icsDate(start),
+              "DTEND:" + icsDate(end),
+              "SUMMARY:" + (slot.label || "4E Workshop Session"),
+              "DESCRIPTION:" + (group?.name || "") + " — " + (slot.label || "Workshop Session") + (finalMeetLink ? "\\nJoin: " + finalMeetLink : ""),
+              finalMeetLink ? "LOCATION:" + finalMeetLink : "",
+              "STATUS:CONFIRMED",
+              "ORGANIZER;CN=4E Workshop:mailto:noreply@4escheduler.com",
+              "ATTENDEE;CN=" + after.name + ";RSVP=TRUE:mailto:" + after.email,
+              "BEGIN:VALARM",
+              "TRIGGER:-PT30M",
+              "ACTION:DISPLAY",
+              "DESCRIPTION:Reminder",
+              "END:VALARM",
+              "END:VEVENT",
+              "END:VCALENDAR"
+            ].filter(Boolean).join("\r\n");
+
+            const templateParams = {
+              to_email: after.email,
+              to_name: after.name,
+              session_title: slot.label || "4E Workshop Session",
+              session_date: dateStr,
+              session_time: timeStr,
+              session_duration: String(dur),
+              group_name: group?.name || "",
+              meeting_link: finalMeetLink || "",
+              scheduler_link: "https://sean4e.github.io/4E_Scheduler/",
+              participant_code: after.code || "",
+              ics_content: icsContent,
+            };
+
+            const emailResp = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                service_id: ejs.serviceId,
+                template_id: ejs.templateId,
+                user_id: ejs.publicKey,
+                template_params: templateParams,
+                accessToken: EMAILJS_PRIVATE_KEY,
+              }),
+            });
+
+            if (emailResp.ok) {
+              console.log("Email invite sent to", after.email, "for slot", slotId);
+              // Mark invite as sent on the booking entry
+              const currentDoc = await db.collection("participants").doc(participantId).get();
+              if (currentDoc.exists) {
+                const currentSlots = (currentDoc.data().bookedSlots || []).map(e => {
+                  const id = typeof e === "string" ? e : e.slotId;
+                  if (id === slotId) {
+                    const entry = typeof e === "string" ? { slotId: e, status: "booked", notes: "" } : { ...e };
+                    entry.inviteSent = true;
+                    return entry;
+                  }
+                  return e;
+                });
+                await db.collection("participants").doc(participantId).update({ bookedSlots: currentSlots });
+              }
+            } else {
+              console.error("EmailJS send failed:", await emailResp.text());
+            }
+          }
+        } catch (emailErr) {
+          console.error("Email invite error:", emailErr.message);
         }
       }
     }
