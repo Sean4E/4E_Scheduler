@@ -810,8 +810,8 @@ function generateICS(slot, participantName) {
   const { start, end } = slotToDateTimes(slot);
   const g = getGroup(slot.groupId);
   const link = getMeetLink(slot);
-  const summary = '4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : '');
-  let desc = (slot.label ? slot.label + '\\n' : '') + 'Booked by: ' + participantName;
+  const summary = '4E Workshop — ' + participantName;
+  let desc = (g && g.id !== 'all' ? g.name + '\\n' : '') + (slot.label ? slot.label + '\\n' : '');
   if (link) desc += '\\n\\nJoin Meeting: ' + link;
   const lines = [
     'BEGIN:VCALENDAR',
@@ -839,12 +839,13 @@ function downloadICS(slot, participantName) {
   URL.revokeObjectURL(url);
 }
 
-function googleCalURL(slot) {
+function googleCalURL(slot, pName) {
   const { start, end } = slotToDateTimes(slot);
   const g = getGroup(slot.groupId);
   const link = getMeetLink(slot);
-  const title = encodeURIComponent('4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : ''));
-  let detailText = slot.label || '4E Virtual Design workshop session';
+  const who = pName || getBooker(slot.id)?.name || 'Session';
+  const title = encodeURIComponent('4E Workshop — ' + who);
+  let detailText = (g && g.id !== 'all' ? g.name + '\n' : '') + (slot.label || '4E Virtual Design workshop session');
   if (link) detailText += '\n\nJoin Meeting: ' + link;
   const details = encodeURIComponent(detailText);
   const dates = toICSDate(start) + '/' + toICSDate(end);
@@ -853,12 +854,13 @@ function googleCalURL(slot) {
   return url;
 }
 
-function outlookCalURL(slot) {
+function outlookCalURL(slot, pName) {
   const { start, end } = slotToDateTimes(slot);
   const g = getGroup(slot.groupId);
   const link = getMeetLink(slot);
-  const subject = encodeURIComponent('4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : ''));
-  let body = slot.label || '4E Virtual Design workshop session';
+  const who = pName || getBooker(slot.id)?.name || 'Session';
+  const subject = encodeURIComponent('4E Workshop — ' + who);
+  let body = (g && g.id !== 'all' ? g.name + '\n' : '') + (slot.label || '4E Virtual Design workshop session');
   if (link) body += '\n\nJoin Meeting: ' + link;
   const startISO = start.toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
   const endISO   = end.toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
@@ -890,8 +892,8 @@ function showBookingConfirmation(slot, participantName) {
     (link ? `<br><a href="${esc(link)}" target="_blank" rel="noopener" style="color:var(--cyan);font-size:12px;font-family:var(--mono)">🔗 Join Meeting</a>` : '');
   // Calendar buttons
   document.getElementById('confirmCalBtns').innerHTML =
-    `<a class="btn-p btn-sm" style="text-decoration:none" href="${googleCalURL(slot)}" target="_blank" rel="noopener">📅 Google Calendar</a>
-     <a class="btn-g btn-sm" style="text-decoration:none" href="${outlookCalURL(slot)}" target="_blank" rel="noopener">📅 Outlook</a>
+    `<a class="btn-p btn-sm" style="text-decoration:none" href="${googleCalURL(slot,participantName)}" target="_blank" rel="noopener">📅 Google Calendar</a>
+     <a class="btn-g btn-sm" style="text-decoration:none" href="${outlookCalURL(slot,participantName)}" target="_blank" rel="noopener">📅 Outlook</a>
      <button class="btn-g btn-sm" onclick="downloadICS(bookingSlots.find(x=>x.id==='${slot.id}'),'${esc(participantName)}')">📅 .ics / Apple</button>`;
   document.getElementById('bookingConfirm').style.display = 'flex';
 }
@@ -1297,8 +1299,8 @@ function renderSupDayPanel(ds) {
         ${isTaken?'● '+esc(b.name):'AVAILABLE'}
       </div>
       ${isTaken?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
-        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s)}" target="_blank" rel="noopener">📅 Google</a>
-        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s)}" target="_blank" rel="noopener">📅 Outlook</a>
+        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Google</a>
+        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Outlook</a>
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(supSlots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
         ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
         <button class="btn-rm" style="font-size:14px" onclick="supUnassignSlot('${b.id}','${s.id}')" title="Unassign">×</button>
@@ -2007,8 +2009,8 @@ function renderBookingDayPanel(ds) {
           </div>
           ${isMine?`<div class="sc-hint">Tap to cancel</div>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
-            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s)}" target="_blank" rel="noopener">📅 Google</a>
-            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s)}" target="_blank" rel="noopener">📅 Outlook</a>
+            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,p.name)}" target="_blank" rel="noopener">📅 Google</a>
+            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,p.name)}" target="_blank" rel="noopener">📅 Outlook</a>
             <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(bookingSlots.find(x=>x.id==='${s.id}'),'${esc(p.name)}')">📅 .ics</button>
             ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
           </div>`:''}
