@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════════
 //  4E WORKSHOP SCHEDULER — FIREBASE CLOUD FUNCTIONS
-//  Zoom OAuth token exchange, refresh, and meeting creation.
-//  The Zoom Client Secret is stored here (server-side only).
+//  Zoom Server-to-Server OAuth — no user login needed.
+//  Credentials are stored here (server-side only).
 // ══════════════════════════════════════════════════════════════════
 
 const functions = require("firebase-functions");
@@ -11,121 +11,90 @@ const fetch = require("node-fetch");
 admin.initializeApp();
 const db = admin.firestore();
 
-// Zoom credentials — Client Secret is safe here (never sent to client)
+// Zoom Server-to-Server credentials (safe here, never sent to client)
 const ZOOM_ACCOUNT_ID    = "wDoYqXjNQ5upGx6If9EQsw";
 const ZOOM_CLIENT_ID     = "9fw0xTu0StKj2OPZpP6fVQ";
 const ZOOM_CLIENT_SECRET = "Nog9ZuKLVHQ29gm4cN7B0XYrLlsnU6PQ";
 
+// Cache token in memory to avoid re-fetching on every call
+let cachedToken = null;
+let tokenExpiry = 0;
+
 // ──────────────────────────────────────────────────────
-//  zoomOAuth — Exchange authorization code for tokens
+//  getZoomToken — Server-to-Server OAuth (account_credentials)
+//  No user login, no redirect. Just works.
 // ──────────────────────────────────────────────────────
-exports.zoomOAuth = functions.https.onRequest(async (req, res) => {
+async function getZoomToken() {
+  // Return cached token if still valid (with 60s buffer)
+  if (cachedToken && Date.now() < tokenExpiry - 60000) {
+    return cachedToken;
+  }
+
+  const basicAuth = Buffer.from(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`).toString("base64");
+  const response = await fetch("https://zoom.us/oauth/token", {
+    method: "POST",
+    headers: {
+      "Authorization": `Basic ${basicAuth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "account_credentials",
+      account_id: ZOOM_ACCOUNT_ID,
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(`Zoom token error: ${data.reason || JSON.stringify(data)}`);
+  }
+
+  cachedToken = data.access_token;
+  tokenExpiry = Date.now() + (data.expires_in * 1000);
+  return cachedToken;
+}
+
+// CORS helper
+function setCors(res) {
   res.set("Access-Control-Allow-Origin", "*");
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.set("Access-Control-Allow-Headers", "Content-Type");
+}
+
+// ──────────────────────────────────────────────────────
+//  zoomStatus — Check if Zoom is reachable
+// ──────────────────────────────────────────────────────
+exports.zoomStatus = functions.https.onRequest(async (req, res) => {
+  setCors(res);
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
 
-  const { code, redirect_uri } = req.body;
-  if (!code || !redirect_uri) {
-    res.status(400).json({ error: "Missing code or redirect_uri" });
-    return;
-  }
-
   try {
-    const basicAuth = Buffer.from(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`).toString("base64");
-    const response = await fetch("https://zoom.us/oauth/token", {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${basicAuth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        code,
-        redirect_uri,
-      }),
+    const token = await getZoomToken();
+    // Fetch current user info to confirm connection
+    const userRes = await fetch("https://api.zoom.us/v2/users/me", {
+      headers: { "Authorization": `Bearer ${token}` },
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      res.status(response.status).json({ error: data.reason || "Token exchange failed", details: data });
+    const userData = await userRes.json();
+    if (!userRes.ok) {
+      res.status(500).json({ connected: false, error: userData.message });
       return;
     }
-
-    // Store tokens in Firestore (base64-encode for minimal obfuscation)
-    await db.collection("config").doc("zoom").set({
-      access_token:  Buffer.from(data.access_token).toString("base64"),
-      refresh_token: Buffer.from(data.refresh_token).toString("base64"),
-      expires_at:    Date.now() + (data.expires_in * 1000),
-      scope:         data.scope || "",
-      connected:     true,
-      connectedAt:   admin.firestore.FieldValue.serverTimestamp(),
+    res.json({
+      connected: true,
+      email: userData.email,
+      name: userData.first_name + " " + userData.last_name,
+      account_id: ZOOM_ACCOUNT_ID,
     });
-
-    res.json({ success: true });
   } catch (err) {
-    console.error("zoomOAuth error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("zoomStatus error:", err);
+    res.status(500).json({ connected: false, error: err.message });
   }
 });
 
 // ──────────────────────────────────────────────────────
-//  zoomRefresh — Refresh the access token
-// ──────────────────────────────────────────────────────
-exports.zoomRefresh = functions.https.onRequest(async (req, res) => {
-  res.set("Access-Control-Allow-Origin", "*");
-  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
-
-  try {
-    const doc = await db.collection("config").doc("zoom").get();
-    if (!doc.exists || !doc.data().refresh_token) {
-      res.status(400).json({ error: "Zoom not connected — no refresh token found" });
-      return;
-    }
-
-    const refreshToken = Buffer.from(doc.data().refresh_token, "base64").toString("utf-8");
-    const basicAuth = Buffer.from(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`).toString("base64");
-
-    const response = await fetch("https://zoom.us/oauth/token", {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${basicAuth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-      }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      res.status(response.status).json({ error: data.reason || "Token refresh failed", details: data });
-      return;
-    }
-
-    await db.collection("config").doc("zoom").update({
-      access_token:  Buffer.from(data.access_token).toString("base64"),
-      refresh_token: Buffer.from(data.refresh_token).toString("base64"),
-      expires_at:    Date.now() + (data.expires_in * 1000),
-    });
-
-    res.json({ success: true, access_token: data.access_token });
-  } catch (err) {
-    console.error("zoomRefresh error:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// ──────────────────────────────────────────────────────
-//  zoomCreateMeeting — Create a Zoom meeting
+//  zoomCreateMeeting — Create a scheduled Zoom meeting
 // ──────────────────────────────────────────────────────
 exports.zoomCreateMeeting = functions.https.onRequest(async (req, res) => {
-  res.set("Access-Control-Allow-Origin", "*");
-  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type");
+  setCors(res);
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
 
   const { topic, start_time, duration, settings } = req.body;
@@ -135,49 +104,13 @@ exports.zoomCreateMeeting = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    // Get stored access token
-    const doc = await db.collection("config").doc("zoom").get();
-    if (!doc.exists || !doc.data().access_token) {
-      res.status(400).json({ error: "Zoom not connected" });
-      return;
-    }
+    const token = await getZoomToken();
 
-    let accessToken = Buffer.from(doc.data().access_token, "base64").toString("utf-8");
-
-    // If token is expired, refresh it first
-    if (doc.data().expires_at && Date.now() >= doc.data().expires_at) {
-      const refreshToken = Buffer.from(doc.data().refresh_token, "base64").toString("utf-8");
-      const basicAuth = Buffer.from(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`).toString("base64");
-      const refreshRes = await fetch("https://zoom.us/oauth/token", {
-        method: "POST",
-        headers: {
-          "Authorization": `Basic ${basicAuth}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-        }),
-      });
-      const refreshData = await refreshRes.json();
-      if (!refreshRes.ok) {
-        res.status(500).json({ error: "Failed to refresh Zoom token", details: refreshData });
-        return;
-      }
-      accessToken = refreshData.access_token;
-      await db.collection("config").doc("zoom").update({
-        access_token:  Buffer.from(refreshData.access_token).toString("base64"),
-        refresh_token: Buffer.from(refreshData.refresh_token).toString("base64"),
-        expires_at:    Date.now() + (refreshData.expires_in * 1000),
-      });
-    }
-
-    // Create the meeting
     const meetingSettings = {
       waiting_room:     settings?.waiting_room ?? true,
       meeting_authentication: false,
       auto_recording:   settings?.auto_recording || "none",
-      join_before_host: false,
+      join_before_host: true,
     };
     if (settings?.passcode) {
       meetingSettings.passcode = settings.passcode;
@@ -186,34 +119,66 @@ exports.zoomCreateMeeting = functions.https.onRequest(async (req, res) => {
     const meetingRes = await fetch("https://api.zoom.us/v2/users/me/meetings", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
+        "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        topic:      topic,
-        type:       2, // scheduled meeting
-        start_time: start_time,
+        topic,
+        type:       2,
+        start_time,
         duration:   duration || 30,
         timezone:   "Europe/Dublin",
         settings:   meetingSettings,
       }),
     });
 
-    const meetingData = await meetingRes.json();
+    const data = await meetingRes.json();
     if (!meetingRes.ok) {
-      res.status(meetingRes.status).json({ error: "Failed to create Zoom meeting", details: meetingData });
+      res.status(meetingRes.status).json({ error: "Failed to create meeting", details: data });
       return;
     }
 
     res.json({
       success:    true,
-      join_url:   meetingData.join_url,
-      meeting_id: meetingData.id,
-      passcode:   meetingData.password || "",
-      start_url:  meetingData.start_url,
+      join_url:   data.join_url,
+      meeting_id: data.id,
+      passcode:   data.password || "",
+      start_url:  data.start_url,
     });
   } catch (err) {
     console.error("zoomCreateMeeting error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────
+//  zoomDeleteMeeting — Delete/cancel a Zoom meeting
+// ──────────────────────────────────────────────────────
+exports.zoomDeleteMeeting = functions.https.onRequest(async (req, res) => {
+  setCors(res);
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+
+  const { meeting_id } = req.body;
+  if (!meeting_id) {
+    res.status(400).json({ error: "Missing meeting_id" });
+    return;
+  }
+
+  try {
+    const token = await getZoomToken();
+    const delRes = await fetch(`https://api.zoom.us/v2/meetings/${meeting_id}`, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+
+    if (delRes.status === 204 || delRes.ok) {
+      res.json({ success: true });
+    } else {
+      const data = await delRes.json();
+      res.status(delRes.status).json({ error: "Failed to delete meeting", details: data });
+    }
+  } catch (err) {
+    console.error("zoomDeleteMeeting error:", err);
+    res.status(500).json({ error: err.message });
   }
 });

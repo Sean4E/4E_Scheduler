@@ -852,7 +852,7 @@ input::placeholder{color:var(--text-dim)}
               <div style="font-size:14px;font-weight:700">Zoom Meetings</div>
               <div id="zoomStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Not connected</div>
             </div>
-            <button class="btn-p btn-sm" id="btnZoomConnect" onclick="connectZoom()">Connect</button>
+            <button class="btn-p btn-sm" id="btnZoomConnect" onclick="connectZoom()">Activate</button>
             <button class="btn-g btn-sm" id="btnZoomDisconnect" onclick="disconnectZoom()" style="display:none">Disconnect</button>
           </div>
           <div id="zoomSettings" style="display:none">
@@ -2959,7 +2959,6 @@ let gisInited  = false;
 let tokenClient = null;
 
 const GOOGLE_CLIENT_ID = '629471213590-obk2tqf8559romco0n9i57rvcooae3aa.apps.googleusercontent.com';
-const ZOOM_CLIENT_ID   = '9fw0xTu0StKj2OPZpP6fVQ';
 // NOTE: Cloud Functions base URL — update after deploying functions
 const FUNCTIONS_BASE   = 'https://us-central1-scheduler4e.cloudfunctions.net';
 
@@ -3045,7 +3044,8 @@ async function updateZoomStatusUI() {
   try {
     const doc = await db.collection('config').doc('zoom').get();
     if (doc.exists && doc.data().connected) {
-      if (zoomSt) zoomSt.innerHTML = '<span style="color:var(--green)">Connected</span>';
+      const zEmail = doc.data().email || '';
+      if (zoomSt) zoomSt.innerHTML = `<span style="color:var(--green)">Connected</span>${zEmail ? ` <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">${zEmail}</span>` : ''}`;
       if (btnZC) btnZC.style.display = 'none';
       if (btnZD) btnZD.style.display = '';
       if (zoomSet) zoomSet.style.display = 'block';
@@ -3117,8 +3117,6 @@ function initGis() {
 window.addEventListener('load', () => {
   if (typeof gapi !== 'undefined') initGapi();
   if (typeof google !== 'undefined' && google.accounts) initGis();
-  // Handle Zoom OAuth callback
-  handleZoomOAuthCallback();
 });
 
 function connectGoogleCalendar() {
@@ -3201,40 +3199,31 @@ async function updateGoogleCalEvent(eventId, updates) {
 }
 
 // ══════════════════════════════════════════════════════
-//  ZOOM — OAuth & Meeting Creation (via Cloud Functions)
+//  ZOOM — Server-to-Server OAuth (no user login needed)
+//  Cloud Functions handle all Zoom API calls securely.
 // ══════════════════════════════════════════════════════
-function connectZoom() {
-  const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
-  const url = `https://zoom.us/oauth/authorize?response_type=code&client_id=${ZOOM_CLIENT_ID}&redirect_uri=${redirectUri}`;
-  window.location.href = url;
-}
-
-async function handleZoomOAuthCallback() {
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  if (!code) return;
-  // Clean URL
-  window.history.replaceState({}, document.title, window.location.pathname);
-  toast('Connecting Zoom...');
+async function connectZoom() {
+  toast('Checking Zoom connection...');
   try {
-    const resp = await fetch(FUNCTIONS_BASE + '/zoomOAuth', {
+    const resp = await fetch(FUNCTIONS_BASE + '/zoomStatus', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code,
-        redirect_uri: window.location.origin + window.location.pathname,
-      }),
     });
     const data = await resp.json();
-    if (data.success) {
-      toast('Zoom connected successfully');
-      updateZoomStatusUI();
+    if (data.connected) {
+      await db.collection('config').doc('zoom').set({
+        connected: true,
+        email: data.email || '',
+        name: data.name || '',
+      });
+      toast(`Zoom connected as ${data.email || data.name} ✓`);
     } else {
-      toast('Zoom connection failed: ' + (data.error || 'Unknown error'), 'err');
+      toast('Zoom connection failed — check Cloud Functions deployment', 'err');
     }
+    updateZoomStatusUI();
   } catch(e) {
-    toast('Error connecting Zoom', 'err');
-    console.error('Zoom OAuth error:', e);
+    toast('Cannot reach Cloud Functions — deploy them first', 'err');
+    console.error('Zoom connect error:', e);
   }
 }
 
