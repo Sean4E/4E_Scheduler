@@ -403,8 +403,9 @@ exports.checkCalendar = onRequest({ region: REGION }, async (req, res) => {
   if (!handleCors(req, res)) return;
   try {
     const calendar = getCalendar();
-    const r = await calendar.calendarList.get({ calendarId: GOOGLE_CALENDAR_ID });
-    res.json({ connected: true, calendarId: GOOGLE_CALENDAR_ID, summary: r.data.summary, email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL });
+    // Use events.list instead of calendarList.get (works for shared calendars)
+    const r = await calendar.events.list({ calendarId: GOOGLE_CALENDAR_ID, maxResults: 1, timeMin: new Date().toISOString() });
+    res.json({ connected: true, calendarId: GOOGLE_CALENDAR_ID, email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL });
   } catch (err) {
     res.status(500).json({ connected: false, error: err.message, hint: "Share your Google Calendar with: " + (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "the service account email") });
   }
