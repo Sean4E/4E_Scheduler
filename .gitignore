@@ -1,5 +1,7 @@
 GitIgnore/
 functions/node_modules/
 functions/.env
+functions/service-account-key.json
 .env
 *.secret
+*-key.json
