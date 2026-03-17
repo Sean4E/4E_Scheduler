@@ -2120,6 +2120,8 @@ function startAdminListeners() {
     if (editingId) return; // don't wipe an active edit
     renderParticipants();
     renderBadges();
+    // Re-render admin day panel so assignments show in realtime
+    if (adminSelDate) renderAdminDayPanel(adminSelDate);
   }, err => console.error('participants listener:', err));
 
   unsubSlots = db.collection('slots').orderBy('date').onSnapshot(snap => {
@@ -2589,19 +2591,20 @@ function renderAdminDayPanel(ds) {
     return;
   }
 
-  // Build participant dropdown filtered by group
-  const filteredParts = adminAssignGroupFilter === 'all'
+  // Build participant dropdown — use the calendar's group filter
+  const assignGf = gf; // same filter as calendar slots
+  const filteredParts = assignGf === 'all'
     ? participants
-    : participants.filter(p => p.groupId === adminAssignGroupFilter);
+    : participants.filter(p => p.groupId === assignGf);
   const partOptions = filteredParts.filter(p => (p.sessionsAllocated - bookedCount(p)) > 0);
 
-  let html = `<div class="card" style="padding:12px 16px;margin-bottom:14px">
+  // Auto-sync group filter from calendar top filter
+  const calGf = document.getElementById('calGroupFilter')?.value || 'all';
+  if (adminAssignGroupFilter === 'all' && calGf !== 'all') adminAssignGroupFilter = calGf;
+
+  let html = `${partOptions.length ? `<div class="card" style="padding:12px 16px;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="eyebrow" style="color:var(--purple);white-space:nowrap">ASSIGN TO</div>
-      <select id="adminAssignGroupFilter" style="min-width:120px;font-size:11px;padding:5px 10px;width:auto" onchange="adminAssignGroupChanged(this.value)">
-        <option value="all" ${adminAssignGroupFilter==='all'?'selected':''}>All Groups</option>
-        ${groups.map(g => `<option value="${g.id}" ${g.id===adminAssignGroupFilter?'selected':''}>${esc(g.name)}</option>`).join('')}
-      </select>
       <select id="adminDayAssignPart" style="flex:1;min-width:140px" onchange="adminAssignPid=this.value">
         <option value="">Select participant…</option>
         ${partOptions.map(p => {
@@ -2612,7 +2615,7 @@ function renderAdminDayPanel(ds) {
         }).join('')}
       </select>
     </div>
-  </div>
+  </div>` : ''}
   <div class="time-slots">`;
 
   html += daySlots.map(s => {
