@@ -3212,7 +3212,7 @@ async function updateGoogleCalEvent(eventId, updates) {
 async function connectZoom() {
   toast('Checking Zoom connection...');
   try {
-    const resp = await fetch(FUNCTIONS_BASE + '/zoomStatus', {
+    const resp = await fetch(FUNCTIONS_BASE + '/checkZoom', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -3244,7 +3244,7 @@ async function disconnectZoom() {
 
 async function createZoomMeeting(topic, startTime, duration) {
   try {
-    const resp = await fetch(FUNCTIONS_BASE + '/zoomCreateMeeting', {
+    const resp = await fetch(FUNCTIONS_BASE + '/createMeeting', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

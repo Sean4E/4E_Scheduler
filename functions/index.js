@@ -1,43 +1,32 @@
 // ══════════════════════════════════════════════════════════════════
-//  4E WORKSHOP SCHEDULER — FIREBASE CLOUD FUNCTIONS
+//  4E WORKSHOP SCHEDULER — FIREBASE CLOUD FUNCTIONS (Gen 2)
 //  Zoom Server-to-Server OAuth — no user login needed.
-//
-//  DEPLOY: firebase deploy --only functions
-//  CREDENTIALS: Set via Firebase Functions config:
-//    firebase functions:config:set zoom.account_id="..." zoom.client_id="..." zoom.client_secret="..."
-//  Or use hardcoded fallbacks below for initial setup.
+//  Credentials via functions/.env (process.env)
 // ══════════════════════════════════════════════════════════════════
 
-const functions = require("firebase-functions");
+const { onRequest } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const fetch = require("node-fetch");
 
 admin.initializeApp();
-const db = admin.firestore();
 
-// Zoom credentials from .env file (deployed with functions, never in client code)
+// Zoom credentials from .env
 const ZOOM_ACCOUNT_ID    = process.env.ZOOM_ACCOUNT_ID;
 const ZOOM_CLIENT_ID     = process.env.ZOOM_CLIENT_ID;
 const ZOOM_CLIENT_SECRET = process.env.ZOOM_CLIENT_SECRET;
 
-// Allowed origins — restrict to your deployed domain
+// Allowed origins
 const ALLOWED_ORIGINS = [
   "https://sean4e.github.io",
-  "http://localhost:5500",   // local dev
+  "http://localhost:5500",
   "http://127.0.0.1:5500",
 ];
 
-// Cache token in memory to avoid re-fetching on every call
+// Token cache
 let cachedToken = null;
 let tokenExpiry = 0;
 
-// ──────────────────────────────────────────────────────
-//  getZoomToken — Server-to-Server OAuth (account_credentials)
-// ──────────────────────────────────────────────────────
 async function getZoomToken() {
-  if (cachedToken && Date.now() < tokenExpiry - 60000) {
-    return cachedToken;
-  }
+  if (cachedToken && Date.now() < tokenExpiry - 60000) return cachedToken;
 
   const basicAuth = Buffer.from(`${ZOOM_CLIENT_ID}:${ZOOM_CLIENT_SECRET}`).toString("base64");
   const response = await fetch("https://zoom.us/oauth/token", {
@@ -53,147 +42,82 @@ async function getZoomToken() {
   });
 
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(`Zoom token error: ${data.reason || JSON.stringify(data)}`);
-  }
+  if (!response.ok) throw new Error(`Zoom token error: ${data.reason || JSON.stringify(data)}`);
 
   cachedToken = data.access_token;
   tokenExpiry = Date.now() + (data.expires_in * 1000);
   return cachedToken;
 }
 
-// CORS helper — must handle OPTIONS preflight correctly
 function handleCors(req, res) {
   const origin = req.headers.origin || "";
-  // Allow listed origins, or allow all in dev
   const allowed = ALLOWED_ORIGINS.some(o => origin === o || origin.startsWith(o + "/"));
   res.set("Access-Control-Allow-Origin", allowed ? origin : ALLOWED_ORIGINS[0]);
   res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.set("Access-Control-Allow-Headers", "Content-Type");
   res.set("Access-Control-Max-Age", "3600");
-
-  if (req.method === "OPTIONS") {
-    res.status(204).send("");
-    return false; // handled, don't continue
-  }
-  return true; // continue processing
+  if (req.method === "OPTIONS") { res.status(204).send(""); return false; }
+  return true;
 }
 
-// ──────────────────────────────────────────────────────
-//  zoomStatus — Check if Zoom is reachable
-// ──────────────────────────────────────────────────────
-exports.zoomStatus = functions.region("europe-west1").https.onRequest(async (req, res) => {
+// ── zoomCheck ──
+exports.checkZoom = onRequest({ region: "europe-west1" }, async (req, res) => {
   if (!handleCors(req, res)) return;
-
   try {
     const token = await getZoomToken();
     const userRes = await fetch("https://api.zoom.us/v2/users/me", {
       headers: { "Authorization": `Bearer ${token}` },
     });
     const userData = await userRes.json();
-    if (!userRes.ok) {
-      res.status(500).json({ connected: false, error: userData.message });
-      return;
-    }
-    res.json({
-      connected: true,
-      email: userData.email,
-      name: userData.first_name + " " + userData.last_name,
-      account_id: ZOOM_ACCOUNT_ID,
-    });
+    if (!userRes.ok) { res.status(500).json({ connected: false, error: userData.message }); return; }
+    res.json({ connected: true, email: userData.email, name: (userData.first_name || "") + " " + (userData.last_name || "") });
   } catch (err) {
-    console.error("zoomStatus error:", err);
     res.status(500).json({ connected: false, error: err.message });
   }
 });
 
-// ──────────────────────────────────────────────────────
-//  zoomCreateMeeting — Create a scheduled Zoom meeting
-// ──────────────────────────────────────────────────────
-exports.zoomCreateMeeting = functions.region("europe-west1").https.onRequest(async (req, res) => {
+// ── zoomCreateMeeting ──
+exports.createMeeting = onRequest({ region: "europe-west1" }, async (req, res) => {
   if (!handleCors(req, res)) return;
-
   const { topic, start_time, duration, settings } = req.body;
-  if (!topic || !start_time) {
-    res.status(400).json({ error: "Missing topic or start_time" });
-    return;
-  }
-
+  if (!topic || !start_time) { res.status(400).json({ error: "Missing topic or start_time" }); return; }
   try {
     const token = await getZoomToken();
-
-    const meetingSettings = {
-      waiting_room:     settings?.waiting_room ?? true,
-      meeting_authentication: false,
-      auto_recording:   settings?.auto_recording || "none",
-      join_before_host: true,
-    };
-    if (settings?.passcode) {
-      meetingSettings.passcode = settings.passcode;
-    }
-
     const meetingRes = await fetch("https://api.zoom.us/v2/users/me/meetings", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        topic,
-        type:       2,
-        start_time,
-        duration:   duration || 30,
-        timezone:   "Europe/Dublin",
-        settings:   meetingSettings,
+        topic, type: 2, start_time, duration: duration || 30, timezone: "Europe/Dublin",
+        settings: {
+          waiting_room: settings?.waiting_room ?? true,
+          meeting_authentication: false,
+          auto_recording: settings?.auto_recording || "none",
+          join_before_host: true,
+          ...(settings?.passcode ? { passcode: settings.passcode } : {}),
+        },
       }),
     });
-
     const data = await meetingRes.json();
-    if (!meetingRes.ok) {
-      res.status(meetingRes.status).json({ error: "Failed to create meeting", details: data });
-      return;
-    }
-
-    res.json({
-      success:    true,
-      join_url:   data.join_url,
-      meeting_id: data.id,
-      passcode:   data.password || "",
-      start_url:  data.start_url,
-    });
+    if (!meetingRes.ok) { res.status(meetingRes.status).json({ error: "Failed to create meeting", details: data }); return; }
+    res.json({ success: true, join_url: data.join_url, meeting_id: data.id, passcode: data.password || "", start_url: data.start_url });
   } catch (err) {
-    console.error("zoomCreateMeeting error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ──────────────────────────────────────────────────────
-//  zoomDeleteMeeting — Delete/cancel a Zoom meeting
-// ──────────────────────────────────────────────────────
-exports.zoomDeleteMeeting = functions.region("europe-west1").https.onRequest(async (req, res) => {
+// ── zoomDeleteMeeting ──
+exports.deleteMeeting = onRequest({ region: "europe-west1" }, async (req, res) => {
   if (!handleCors(req, res)) return;
-
   const { meeting_id } = req.body;
-  if (!meeting_id || !/^\d+$/.test(String(meeting_id))) {
-    res.status(400).json({ error: "Missing or invalid meeting_id" });
-    return;
-  }
-
+  if (!meeting_id || !/^\d+$/.test(String(meeting_id))) { res.status(400).json({ error: "Invalid meeting_id" }); return; }
   try {
     const token = await getZoomToken();
     const delRes = await fetch(`https://api.zoom.us/v2/meetings/${meeting_id}`, {
-      method: "DELETE",
-      headers: { "Authorization": `Bearer ${token}` },
+      method: "DELETE", headers: { "Authorization": `Bearer ${token}` },
     });
-
-    if (delRes.status === 204 || delRes.ok) {
-      res.json({ success: true });
-    } else {
-      const data = await delRes.json();
-      res.status(delRes.status).json({ error: "Failed to delete meeting", details: data });
-    }
+    if (delRes.status === 204 || delRes.ok) { res.json({ success: true }); }
+    else { const data = await delRes.json(); res.status(delRes.status).json({ error: "Failed to delete", details: data }); }
   } catch (err) {
-    console.error("zoomDeleteMeeting error:", err);
     res.status(500).json({ error: err.message });
   }
 });
