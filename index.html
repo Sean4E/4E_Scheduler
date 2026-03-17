@@ -448,6 +448,12 @@ input::placeholder{color:var(--text-dim)}
           <div class="color-palette" id="colorPalette"></div>
         </div>
         <div style="margin-bottom:14px">
+          <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">MEETING LINK <span style="font-size:9px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL — ZOOM / TEAMS / MEET)</span></div>
+          <div class="form-row">
+            <input type="text" id="gMeetLink" placeholder="https://zoom.us/j/... or https://teams.microsoft.com/..." style="flex:1">
+          </div>
+        </div>
+        <div style="margin-bottom:14px">
           <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">SUPERVISOR PIN <span style="font-size:9px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL)</span></div>
           <div class="form-row">
             <input type="text" id="gSupPin" placeholder="4-digit PIN for supervisor access" maxlength="4" pattern="[0-9]*" inputmode="numeric" style="width:200px;letter-spacing:4px;font-size:14px" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
@@ -705,17 +711,11 @@ input::placeholder{color:var(--text-dim)}
 
 <!-- Booking confirmation overlay -->
 <div id="bookingConfirm" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);align-items:center;justify-content:center">
-  <div class="card anim" style="padding:32px;max-width:400px;margin:16px;text-align:center">
+  <div class="card anim" style="padding:32px;max-width:420px;margin:16px;text-align:center">
     <div style="font-size:32px;margin-bottom:12px">✓</div>
     <h3 style="font-size:18px;font-weight:800;margin-bottom:6px;color:var(--green)">Session Booked!</h3>
-    <div id="confirmDetails" style="color:var(--text-mid);font-size:13px;margin-bottom:20px;line-height:1.65"></div>
-    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:16px">
-      <button class="btn-p btn-sm" id="confirmICS" style="display:flex;align-items:center;gap:6px">📅 Download .ics</button>
-      <a id="confirmGCal" class="btn-g btn-sm" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;text-decoration:none">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" stroke-width="2"/></svg>
-        Google Calendar
-      </a>
-    </div>
+    <div id="confirmDetails" style="color:var(--text-mid);font-size:13px;margin-bottom:16px;line-height:1.65"></div>
+    <div id="confirmCalBtns" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:18px"></div>
     <button class="btn-g btn-sm" style="width:100%" onclick="document.getElementById('bookingConfirm').style.display='none'">Done</button>
   </div>
 </div>
@@ -809,9 +809,10 @@ function toICSDate(d) {
 function generateICS(slot, participantName) {
   const { start, end } = slotToDateTimes(slot);
   const g = getGroup(slot.groupId);
+  const link = getMeetLink(slot);
   const summary = '4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : '');
   let desc = (slot.label ? slot.label + '\\n' : '') + 'Booked by: ' + participantName;
-  if (slot.meetingLink) desc += '\\n\\nJoin Meeting: ' + slot.meetingLink;
+  if (link) desc += '\\n\\nJoin Meeting: ' + link;
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -823,7 +824,7 @@ function generateICS(slot, participantName) {
     'DESCRIPTION:' + desc,
     'STATUS:CONFIRMED',
   ];
-  if (slot.meetingLink) lines.push('LOCATION:' + slot.meetingLink);
+  if (link) lines.push('LOCATION:' + link);
   lines.push('END:VEVENT', 'END:VCALENDAR');
   return lines.join('\r\n');
 }
@@ -841,28 +842,57 @@ function downloadICS(slot, participantName) {
 function googleCalURL(slot) {
   const { start, end } = slotToDateTimes(slot);
   const g = getGroup(slot.groupId);
+  const link = getMeetLink(slot);
   const title = encodeURIComponent('4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : ''));
   let detailText = slot.label || '4E Virtual Design workshop session';
-  if (slot.meetingLink) detailText += '\n\nJoin Meeting: ' + slot.meetingLink;
+  if (link) detailText += '\n\nJoin Meeting: ' + link;
   const details = encodeURIComponent(detailText);
   const dates = toICSDate(start) + '/' + toICSDate(end);
   let url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}`;
-  if (slot.meetingLink) url += '&location=' + encodeURIComponent(slot.meetingLink);
+  if (link) url += '&location=' + encodeURIComponent(link);
   return url;
+}
+
+function outlookCalURL(slot) {
+  const { start, end } = slotToDateTimes(slot);
+  const g = getGroup(slot.groupId);
+  const link = getMeetLink(slot);
+  const subject = encodeURIComponent('4E Workshop Session' + (g && g.id !== 'all' ? ' — ' + g.name : ''));
+  let body = slot.label || '4E Virtual Design workshop session';
+  if (link) body += '\n\nJoin Meeting: ' + link;
+  const startISO = start.toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
+  const endISO   = end.toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
+  let url = `https://outlook.live.com/calendar/0/action/compose?subject=${subject}&body=${encodeURIComponent(body)}&startdt=${start.toISOString()}&enddt=${end.toISOString()}`;
+  if (link) url += '&location=' + encodeURIComponent(link);
+  return url;
+}
+
+function calendarButtons(slot, participantName) {
+  const link = getMeetLink(slot);
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap">
+    <a class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;text-decoration:none" href="${googleCalURL(slot)}" target="_blank" rel="noopener" title="Add to Google Calendar">📅 Google</a>
+    <a class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;text-decoration:none" href="${outlookCalURL(slot)}" target="_blank" rel="noopener" title="Add to Outlook">📅 Outlook</a>
+    <button class="btn-g btn-sm" style="font-size:9px;padding:4px 10px" onclick="downloadICS(${slot.id?`supSlots.find(x=>x.id==='${slot.id}')||bookingSlots.find(x=>x.id==='${slot.id}')||slots.find(x=>x.id==='${slot.id}')`:`null`},'${esc(participantName)}')" title="Download .ics (Apple Calendar / other)">📅 .ics</button>
+    ${link?`<a class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;text-decoration:none;color:var(--cyan)" href="${esc(link)}" target="_blank" rel="noopener">🔗 Join</a>`:''}
+  </div>`;
 }
 
 function showBookingConfirmation(slot, participantName) {
   const { start, dur } = slotToDateTimes(slot);
   const g = getGroup(slot.groupId);
+  const link = getMeetLink(slot);
   const dayStr = start.toLocaleDateString('en-IE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const timeStr = fmtTime(slot.time);
   document.getElementById('confirmDetails').innerHTML =
     `<strong style="color:var(--text)">${dayStr}</strong><br>${timeStr} · ${dur} minutes` +
     (slot.label ? `<br><span style="color:var(--text-dim)">${esc(slot.label)}</span>` : '') +
     (g && g.id !== 'all' ? `<br><span style="color:${g.color}">${esc(g.name)}</span>` : '') +
-    (slot.meetingLink ? `<br><a href="${esc(slot.meetingLink)}" target="_blank" rel="noopener" style="color:var(--cyan);font-size:12px;font-family:var(--mono)">🔗 Join Meeting</a>` : '');
-  document.getElementById('confirmICS').onclick = () => downloadICS(slot, participantName);
-  document.getElementById('confirmGCal').href = googleCalURL(slot);
+    (link ? `<br><a href="${esc(link)}" target="_blank" rel="noopener" style="color:var(--cyan);font-size:12px;font-family:var(--mono)">🔗 Join Meeting</a>` : '');
+  // Calendar buttons
+  document.getElementById('confirmCalBtns').innerHTML =
+    `<a class="btn-p btn-sm" style="text-decoration:none" href="${googleCalURL(slot)}" target="_blank" rel="noopener">📅 Google Calendar</a>
+     <a class="btn-g btn-sm" style="text-decoration:none" href="${outlookCalURL(slot)}" target="_blank" rel="noopener">📅 Outlook</a>
+     <button class="btn-g btn-sm" onclick="downloadICS(bookingSlots.find(x=>x.id==='${slot.id}'),'${esc(participantName)}')">📅 .ics / Apple</button>`;
   document.getElementById('bookingConfirm').style.display = 'flex';
 }
 
@@ -1262,12 +1292,15 @@ function renderSupDayPanel(ds) {
     return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}" ${!isTaken?`onclick="supQuickAssign('${s.id}')"`:''}>
       <div class="sc-time">${fmtTime(s.time)}</div>
       ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
-      ${s.meetingLink?'<div style="font-size:10px;color:var(--cyan);margin-bottom:4px">🔗 Meeting link</div>':''}
+      ${getMeetLink(s)?'<div style="font-size:10px;color:var(--cyan);margin-bottom:4px">🔗 Meeting link</div>':''}
       <div class="sc-status" style="color:${isTaken?'var(--purple)':'var(--green)'}">
         ${isTaken?'● '+esc(b.name):'AVAILABLE'}
       </div>
-      ${isTaken?`<div style="display:flex;gap:6px;margin-top:6px" onclick="event.stopPropagation()">
+      ${isTaken?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
+        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s)}" target="_blank" rel="noopener">📅 Google</a>
+        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s)}" target="_blank" rel="noopener">📅 Outlook</a>
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(supSlots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
+        ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
         <button class="btn-rm" style="font-size:14px" onclick="supUnassignSlot('${b.id}','${s.id}')" title="Unassign">×</button>
       </div>`:`<div class="sc-hint">Click to assign</div>`}
     </div>`;
@@ -1502,15 +1535,34 @@ function pickColor(c) { selectedColor = c; renderColorPalette(); }
 async function addGroup() {
   const name = document.getElementById('gName').value.trim();
   if (!name) return;
+  const meetLink = document.getElementById('gMeetLink').value.trim();
   const supPin = document.getElementById('gSupPin').value.trim();
   try {
     const data = { name, color: selectedColor };
+    if (meetLink) data.meetingLink = meetLink;
     if (supPin.length === 4) data.supervisorPinHash = await sha256(supPin);
     await db.collection('groups').doc(uid()).set(data);
     toast(`Group "${name}" created ✓`);
     document.getElementById('gName').value = '';
+    document.getElementById('gMeetLink').value = '';
     document.getElementById('gSupPin').value = '';
   } catch(e) { toast('Error creating group', 'err'); }
+}
+
+async function updateGroupMeetLink(groupId, link) {
+  const val = link.trim();
+  try {
+    if (val) await db.collection('groups').doc(groupId).update({ meetingLink: val });
+    else await db.collection('groups').doc(groupId).update({ meetingLink: firebase.firestore.FieldValue.delete() });
+    toast('Meeting link updated ✓');
+  } catch(e) { toast('Error updating link', 'err'); }
+}
+
+// Resolve meeting link: slot-level overrides group-level
+function getMeetLink(slot) {
+  if (slot.meetingLink) return slot.meetingLink;
+  const g = getGroup(slot.groupId);
+  return g?.meetingLink || '';
 }
 
 async function removeGroup(id) {
@@ -1532,17 +1584,23 @@ function renderGroups() {
   el.innerHTML = groups.map(g => {
     const pCount = participants.filter(p => p.groupId === g.id).length;
     const sCount = slots.filter(s => s.groupId === g.id).length;
-    return `<div class="card p-row">
-      <div style="width:38px;height:38px;border-radius:50%;background:${g.color};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#000">${esc(g.name[0].toUpperCase())}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:700;margin-bottom:3px">${esc(g.name)}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">${pCount} participant${pCount!==1?'s':''} &nbsp;·&nbsp; ${sCount} slot${sCount!==1?'s':''}</div>
+    return `<div class="card" style="padding:16px 18px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="width:38px;height:38px;border-radius:50%;background:${g.color};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#000">${esc(g.name[0].toUpperCase())}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700;margin-bottom:3px">${esc(g.name)}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">${pCount} participant${pCount!==1?'s':''} &nbsp;·&nbsp; ${sCount} slot${sCount!==1?'s':''}</div>
+        </div>
+        ${g.supervisorPinHash
+          ? `<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px;padding:3px 8px;background:var(--green-dim);border-radius:6px;border:1px solid rgba(52,211,153,.2);cursor:pointer" onclick="resetGroupSupPin('${g.id}')" title="Click to reset">🔑 SUPERVISOR</span>`
+          : `<button class="btn-g btn-sm" style="font-size:10px;padding:4px 10px" onclick="setGroupSupPin('${g.id}')">+ Supervisor</button>`}
+        <button class="btn-rm" onclick="removeGroup('${g.id}')">×</button>
       </div>
-      ${g.supervisorPinHash
-        ? `<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px;padding:3px 8px;background:var(--green-dim);border-radius:6px;border:1px solid rgba(52,211,153,.2);cursor:pointer" onclick="resetGroupSupPin('${g.id}')" title="Click to reset">🔑 SUPERVISOR</span>`
-        : `<button class="btn-g btn-sm" style="font-size:10px;padding:4px 10px" onclick="setGroupSupPin('${g.id}')">+ Supervisor</button>`}
-      <div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>
-      <button class="btn-rm" onclick="removeGroup('${g.id}')">×</button>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:2px;white-space:nowrap">🔗 MEETING</span>
+        <input type="text" id="gml_${g.id}" value="${esc(g.meetingLink||'')}" placeholder="Paste Zoom / Teams / Meet link…" style="flex:1;font-size:11px;padding:6px 10px" onchange="updateGroupMeetLink('${g.id}',this.value)">
+        ${g.meetingLink?`<a href="${esc(g.meetingLink)}" target="_blank" rel="noopener" class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)">Test ↗</a>`:''}
+      </div>
     </div>`;
   }).join('');
 }
@@ -1667,6 +1725,21 @@ function showSubForm(type) {
   if (type === 'single') setTimeout(() => document.getElementById('sTime').focus(), 50);
 }
 
+// Check if a time overlaps with existing slots in OTHER groups on the same date
+function checkOverlap(date, time, dur, groupId) {
+  const toMins = t => { const[h,m]=t.split(':').map(Number); return h*60+m; };
+  const newStart = toMins(time), newEnd = newStart + dur;
+  const conflicts = slots.filter(s => {
+    if (s.date !== date) return false;
+    if (s.groupId === groupId) return false; // same group is fine
+    const sStart = toMins(s.time), sEnd = sStart + (s.duration||30);
+    return newStart < sEnd && newEnd > sStart; // overlap
+  });
+  if (!conflicts.length) return null;
+  const gNames = [...new Set(conflicts.map(s => { const g=getGroup(s.groupId); return g?g.name:s.groupId; }))];
+  return gNames.join(', ');
+}
+
 async function addSingleSlot() {
   if (!adminSelDate) return;
   const time     = document.getElementById('sTime').value;
@@ -1676,6 +1749,8 @@ async function addSingleSlot() {
   const meetLink = document.getElementById('sMeetLink').value.trim();
   if (!time) { toast('Pick a time', 'err'); return; }
   if (slots.find(s => s.date===adminSelDate && s.time===time && s.groupId===groupId)) { toast('Slot already exists', 'err'); return; }
+  const overlap = checkOverlap(adminSelDate, time, dur, groupId);
+  if (overlap && !confirm(`⚠ This time overlaps with: ${overlap}\n\nThis could cause a double-booking if you're the only trainer. Continue anyway?`)) return;
   const data = { date: adminSelDate, time, duration: dur, label, groupId };
   if (meetLink) data.meetingLink = meetLink;
   try {
@@ -1723,6 +1798,12 @@ async function addBlock() {
   if (!start || !end) { toast('Set start and end times', 'err'); return; }
   const times = generateBlockSlots(start, end, dur, brk);
   if (!times.length) { toast('No slots fit in this range', 'err'); return; }
+  // Check for overlaps across groups
+  const overlapping = times.map(t => checkOverlap(adminSelDate, t, dur, groupId)).filter(Boolean);
+  if (overlapping.length) {
+    const unique = [...new Set(overlapping)];
+    if (!confirm(`⚠ ${overlapping.length} slot(s) overlap with: ${unique.join(', ')}\n\nThis could cause double-bookings. Continue anyway?`)) return;
+  }
   try {
     const batch = db.batch();
     let added = 0;
@@ -1738,6 +1819,15 @@ async function addBlock() {
     showSubForm(null);
     toast(`${added} slot${added!==1?'s':''} generated ✓`);
   } catch(e) { toast('Error generating slots', 'err'); }
+}
+
+async function updateSlotMeetLink(slotId, link) {
+  const val = link.trim();
+  try {
+    if (val) await db.collection('slots').doc(slotId).update({ meetingLink: val });
+    else await db.collection('slots').doc(slotId).update({ meetingLink: firebase.firestore.FieldValue.delete() });
+    toast('Meeting link updated ✓');
+  } catch(e) { toast('Error updating link', 'err'); }
 }
 
 async function removeSlot(id) {
@@ -1825,13 +1915,20 @@ function renderAdminDayPanel(ds) {
     : daySlots.map(s => {
         const b = getBooker(s.id);
         const g = getGroup(s.groupId);
-        return `<div class="asl-row card">
-          <div class="asl-time" style="color:${b?'var(--purple)':'var(--text)'}">${fmtTime(s.time)}</div>
-          <div class="asl-lbl">${esc(s.label)}</div>
-          ${s.meetingLink?'<span style="font-size:11px" title="Meeting link attached">🔗</span>':''}
-          ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
-          ${b?`<div class="booked-name">${esc(b.name)}</div>`:`<div class="avail-tag">AVAIL</div>`}
-          <button class="btn-rm" onclick="removeSlot('${s.id}')">×</button>
+        const link = getMeetLink(s);
+        return `<div class="card" style="padding:10px 16px;margin-bottom:5px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="asl-time" style="color:${b?'var(--purple)':'var(--text)'}">${fmtTime(s.time)}</div>
+            <div class="asl-lbl">${esc(s.label)}</div>
+            ${link?`<a href="${esc(link)}" target="_blank" rel="noopener" style="font-size:11px;text-decoration:none" title="${esc(link)}">🔗</a>`:''}
+            ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
+            ${b?`<div class="booked-name">${esc(b.name)}</div>`:`<div class="avail-tag">AVAIL</div>`}
+            <button class="btn-rm" onclick="removeSlot('${s.id}')">×</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+            <span style="font-family:var(--mono);font-size:8px;color:var(--text-dim);letter-spacing:1px">🔗</span>
+            <input type="text" value="${esc(s.meetingLink||'')}" placeholder="${g?.meetingLink?'Inherited from group':'Add meeting link…'}" style="flex:1;font-size:10px;padding:4px 8px;background:${s.meetingLink?'rgba(34,211,238,.06)':'rgba(255,255,255,.03)'}" onchange="updateSlotMeetLink('${s.id}',this.value)">
+          </div>
         </div>`;
       }).join('');
 }
@@ -1850,6 +1947,7 @@ function renderAllSlotsList() {
       return `<div class="asl-row card">
         <div class="asl-time" style="color:${b?'var(--purple)':'var(--text)'};font-size:12px">${fmtTime(s.time)}</div>
         ${s.label?`<div class="asl-lbl" style="font-size:11px">${esc(s.label)}</div>`:'<div style="flex:1"></div>'}
+        ${getMeetLink(s)?'<span style="font-size:10px" title="Meeting link">🔗</span>':''}
         ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 7px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
         ${b?`<div class="booked-name">${esc(b.name)}</div>`:`<div class="avail-tag">AVAIL</div>`}
         <button class="btn-rm" onclick="removeSlot('${s.id}')">×</button>
@@ -1909,9 +2007,10 @@ function renderBookingDayPanel(ds) {
           </div>
           ${isMine?`<div class="sc-hint">Tap to cancel</div>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
+            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s)}" target="_blank" rel="noopener">📅 Google</a>
+            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s)}" target="_blank" rel="noopener">📅 Outlook</a>
             <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(bookingSlots.find(x=>x.id==='${s.id}'),'${esc(p.name)}')">📅 .ics</button>
-            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s)}" target="_blank" rel="noopener">G Cal</a>
-            ${s.meetingLink?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(s.meetingLink)}" target="_blank" rel="noopener">🔗 Join</a>`:''}
+            ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
           </div>`:''}
         </div>`;
       }).join('')}
