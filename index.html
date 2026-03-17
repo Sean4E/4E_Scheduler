@@ -1592,6 +1592,8 @@ function stopSupListeners() {
 let supCalDate = new Date();
 let supSelDate = null;
 let supAssignPid = null; // participant selected for assignment in day panel
+let supRescheduling = false; // true when supervisor is mid-reschedule
+let participantRescheduling = false; // true when participant is mid-reschedule
 
 function switchSupTab(name) {
   ['participants','calendar','overview'].forEach(t => {
@@ -1802,6 +1804,7 @@ function renderSupDayPanel(ds) {
         <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Outlook</a>
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(supSlots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
         ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
+        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--orange)" onclick="supRescheduleSlot('${b.id}','${s.id}')">↻ Reschedule</button>
         <button class="btn-rm" style="font-size:14px" onclick="supUnassignSlot('${b.id}','${s.id}')" title="Unassign">×</button>
       </div>
       <div onclick="event.stopPropagation()" style="margin-top:4px">
@@ -1826,7 +1829,12 @@ async function supQuickAssign(sid) {
     await db.collection('participants').doc(supAssignPid).update({
       bookedSlots: addSlotEntry(p.bookedSlots, sid)
     });
-    toast(`Assigned to ${p.name} ✓`);
+    if (supRescheduling) {
+      toast(`${p.name} rescheduled ✓`);
+      supRescheduling = false;
+    } else {
+      toast(`Assigned to ${p.name} ✓`);
+    }
     // Send email invite if configured
     const slot = supSlots.find(x => x.id === sid);
     if (slot) {
@@ -1845,6 +1853,31 @@ async function supUnassignSlot(pid, sid) {
     });
     toast('Slot unassigned');
   } catch(e) { toast('Error unassigning slot', 'err'); }
+}
+
+async function supRescheduleSlot(pid, sid) {
+  const p = participants.find(x => x.id === pid);
+  if (!p) return;
+  try {
+    await db.collection('participants').doc(pid).update({
+      bookedSlots: removeSlotEntry(p.bookedSlots, sid)
+    });
+    supAssignPid = pid;
+    supRescheduling = true;
+    toast('Pick a new slot for ' + p.name);
+  } catch(e) { toast('Error starting reschedule', 'err'); }
+}
+
+async function participantReschedule(sid) {
+  const p = participants.find(x => x.id === currentPid);
+  if (!p) return;
+  try {
+    await db.collection('participants').doc(currentPid).update({
+      bookedSlots: removeSlotEntry(p.bookedSlots, sid)
+    });
+    participantRescheduling = true;
+    toast('Pick a new slot to reschedule');
+  } catch(e) { toast('Error starting reschedule', 'err'); }
 }
 
 // ══════════════════════════════════════════════════════
@@ -2495,12 +2528,54 @@ function adminDotsFn(ds) {
 
 function renderAdminCal() { renderCalendar('adminCalWrap', adminCalDate, adminSelDate, 'adminPrev', 'adminNext', 'adminDayClick', adminDotsFn); }
 
+let adminAssignPid = null; // participant selected for assignment in admin day panel
+let adminAssignGroupFilter = 'all'; // group filter for admin assign dropdown
+
 function adminDayClick(ds) {
   adminSelDate = ds;
+  adminAssignPid = null;
   showSubForm(null);
   renderAdminCal();
   renderAdminDayPanel(ds);
   document.getElementById('adminDayPanel').style.display = 'block';
+}
+
+function adminAssignGroupChanged(val) {
+  adminAssignGroupFilter = val;
+  adminAssignPid = null;
+  if (adminSelDate) renderAdminDayPanel(adminSelDate);
+}
+
+async function adminQuickAssign(sid) {
+  if (!adminAssignPid) { toast('Select a participant first', 'err'); return; }
+  const p = participants.find(x => x.id === adminAssignPid);
+  if (!p) return;
+  const rem = p.sessionsAllocated - bookedCount(p);
+  if (rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
+  if (isBooked(p, sid)) { toast('Already booked', 'err'); return; }
+  if (getBooker(sid)) { toast('Slot already taken', 'err'); return; }
+  try {
+    await db.collection('participants').doc(adminAssignPid).update({
+      bookedSlots: addSlotEntry(p.bookedSlots, sid)
+    });
+    toast(`Assigned to ${p.name} ✓`);
+    const slot = slots.find(x => x.id === sid);
+    if (slot) {
+      const sent = await sendEmailInvite(p, slot, false);
+      if (sent) toast('Invite sent ✓');
+    }
+  } catch(e) { toast('Error assigning slot', 'err'); }
+}
+
+async function adminUnassignSlot(pid, sid) {
+  const p = participants.find(x => x.id === pid);
+  if (!p) return;
+  try {
+    await db.collection('participants').doc(pid).update({
+      bookedSlots: removeSlotEntry(p.bookedSlots, sid)
+    });
+    toast('Slot unassigned');
+  } catch(e) { toast('Error unassigning slot', 'err'); }
 }
 
 function renderAdminDayPanel(ds) {
@@ -2508,36 +2583,79 @@ function renderAdminDayPanel(ds) {
   const gf       = document.getElementById('calGroupFilter')?.value || 'all';
   const daySlots = slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all'));
   const el       = document.getElementById('adminDaySlots');
-  el.innerHTML   = !daySlots.length
-    ? `<div class="empty" style="padding:12px 0"><div class="empty-icon" style="font-size:16px">◇</div>No slots on this day.</div>`
-    : daySlots.map(s => {
-        const b = getBooker(s.id);
-        const g = getGroup(s.groupId);
-        const link = getMeetLink(s);
-        const status = b ? (getSlotStatus(b, s.id) || 'booked') : null;
-        const notes = b ? getSlotNotes(b, s.id) : '';
-        return `<div class="card" style="padding:10px 16px;margin-bottom:5px">
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <div class="asl-time" style="color:${b?'var(--purple)':'var(--text)'}">${fmtTime(s.time)}</div>
-            <div class="asl-lbl">${esc(s.label)}</div>
-            ${link?`<a href="${esc(link)}" target="_blank" rel="noopener" style="font-size:11px;text-decoration:none" title="${esc(link)}">🔗</a>`:''}
-            ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
-            ${b?`<div class="booked-name">${esc(b.name)}</div>`:`<div class="avail-tag">AVAIL</div>`}
-            ${b?statusBadge(status):''}
-            <button class="btn-rm" onclick="removeSlot('${s.id}')">×</button>
-          </div>
-          ${b?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
-            <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓ Done</button>
-            <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗ Missed</button>
-            ${status==='missed'?`<button class="btn-carry" style="font-size:9px;padding:3px 8px" onclick="carryForward('${b.id}','${s.id}')">↻ Carry Forward</button>`:''}
-          </div>`:''}
-          ${b?`<div style="margin-top:4px"><input class="note-input" placeholder="Add note…" value="${esc(notes)}" onchange="updateSlotNote('${b.id}','${s.id}',this.value)"></div>`:''}
-          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
-            <span style="font-family:var(--mono);font-size:8px;color:var(--text-dim);letter-spacing:1px">🔗</span>
-            <input type="text" value="${esc(s.meetingLink||'')}" placeholder="${g?.meetingLink?'Inherited from group':'Add meeting link…'}" style="flex:1;font-size:10px;padding:4px 8px;background:${s.meetingLink?'rgba(34,211,238,.06)':'rgba(255,255,255,.03)'}" onchange="updateSlotMeetLink('${s.id}',this.value)">
-          </div>
-        </div>`;
-      }).join('');
+
+  if (!daySlots.length) {
+    el.innerHTML = `<div class="empty" style="padding:12px 0"><div class="empty-icon" style="font-size:16px">◇</div>No slots on this day.</div>`;
+    return;
+  }
+
+  // Build participant dropdown filtered by group
+  const filteredParts = adminAssignGroupFilter === 'all'
+    ? participants
+    : participants.filter(p => p.groupId === adminAssignGroupFilter);
+  const partOptions = filteredParts.filter(p => (p.sessionsAllocated - bookedCount(p)) > 0);
+
+  let html = `<div class="card" style="padding:12px 16px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="eyebrow" style="color:var(--purple);white-space:nowrap">ASSIGN TO</div>
+      <select id="adminAssignGroupFilter" style="min-width:120px;font-size:11px;padding:5px 10px;width:auto" onchange="adminAssignGroupChanged(this.value)">
+        <option value="all" ${adminAssignGroupFilter==='all'?'selected':''}>All Groups</option>
+        ${groups.map(g => `<option value="${g.id}" ${g.id===adminAssignGroupFilter?'selected':''}>${esc(g.name)}</option>`).join('')}
+      </select>
+      <select id="adminDayAssignPart" style="flex:1;min-width:140px" onchange="adminAssignPid=this.value">
+        <option value="">Select participant…</option>
+        ${partOptions.map(p => {
+          const rem = p.sessionsAllocated - bookedCount(p);
+          const pg = getGroup(p.groupId);
+          const gLabel = pg ? ' [' + esc(pg.name) + ']' : '';
+          return `<option value="${p.id}" ${p.id===adminAssignPid?'selected':''}>${esc(p.name)}${gLabel} (${rem} left)</option>`;
+        }).join('')}
+      </select>
+    </div>
+  </div>
+  <div class="time-slots">`;
+
+  html += daySlots.map(s => {
+    const b = getBooker(s.id);
+    const g = getGroup(s.groupId);
+    const link = getMeetLink(s);
+    const isTaken = !!b;
+    const status = b ? (getSlotStatus(b, s.id) || 'booked') : null;
+    const notes = b ? getSlotNotes(b, s.id) : '';
+    let cls = 'sc';
+    if (isTaken) cls += ' sc-mine';
+    return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}" ${!isTaken?`onclick="adminQuickAssign('${s.id}')"`:''}>
+      <div class="sc-time">${fmtTime(s.time)}</div>
+      ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
+      ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;margin-bottom:4px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
+      ${link?'<div style="font-size:10px;color:var(--cyan);margin-bottom:4px">🔗 Meeting link</div>':''}
+      <div class="sc-status" style="color:${isTaken?'var(--purple)':'var(--green)'}">
+        ${isTaken?'● '+esc(b.name):'AVAILABLE'}
+      </div>
+      ${isTaken ? `<div style="margin-top:4px">${statusBadge(status)}</div>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
+        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓ Done</button>
+        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗ Missed</button>
+        ${status==='missed'?`<button class="btn-carry" style="font-size:9px;padding:3px 8px" onclick="carryForward('${b.id}','${s.id}')">↻ Carry Forward</button>`:''}
+        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Google</a>
+        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Outlook</a>
+        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(slots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
+        ${link?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(link)}" target="_blank" rel="noopener">🔗 Join</a>`:''}
+        <button class="btn-rm" style="font-size:14px" onclick="adminUnassignSlot('${b.id}','${s.id}')" title="Unassign">×</button>
+      </div>
+      <div onclick="event.stopPropagation()" style="margin-top:4px">
+        <input class="note-input" placeholder="Add note…" value="${esc(notes)}" onchange="updateSlotNote('${b.id}','${s.id}',this.value)">
+      </div>` : `<div class="sc-hint">Click to assign</div>`}
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)" onclick="event.stopPropagation()">
+        <span style="font-family:var(--mono);font-size:8px;color:var(--text-dim);letter-spacing:1px">🔗</span>
+        <input type="text" value="${esc(s.meetingLink||'')}" placeholder="${g?.meetingLink?'Inherited from group':'Add meeting link…'}" style="flex:1;font-size:10px;padding:4px 8px;background:${s.meetingLink?'rgba(34,211,238,.06)':'rgba(255,255,255,.03)'}" onchange="updateSlotMeetLink('${s.id}',this.value)">
+        <button class="btn-rm" style="font-size:14px" onclick="removeSlot('${s.id}')" title="Remove slot">×</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 function renderAllSlotsList() {
@@ -2622,6 +2740,7 @@ function renderBookingDayPanel(ds) {
             <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,p.name)}" target="_blank" rel="noopener">📅 Outlook</a>
             <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(bookingSlots.find(x=>x.id==='${s.id}'),'${esc(p.name)}')">📅 .ics</button>
             ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
+            <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--orange)" onclick="participantReschedule('${s.id}')">↻ Reschedule</button>
           </div>`:''}
         </div>`;
       }).join('')}
@@ -2652,7 +2771,7 @@ async function toggleBook(sId) {
   const remaining = p.sessionsAllocated - bookedCount(p);
   if (!isMine && b)          { toast('Already taken', 'err'); return; }
   if (!isMine && remaining<=0){ toast('No sessions remaining', 'err'); return; }
-  if (isMine && !confirm('Cancel this booking?')) return;
+  if (isMine && !participantRescheduling && !confirm('Cancel this booking?')) return;
   // Capture calendar event ID before removing (for deletion)
   const cancelledEntry = isMine ? getSlotEntry(p, sId) : null;
   const newSlots = isMine
@@ -2661,15 +2780,20 @@ async function toggleBook(sId) {
   try {
     await db.collection('participants').doc(currentPid).update({ bookedSlots: newSlots });
     if (isMine) {
-      toast('Booking cancelled');
+      if (!participantRescheduling) toast('Booking cancelled');
       // Delete Google Calendar event if one was created
       if (cancelledEntry?.gcalEventId && googleAccessToken) {
         deleteGoogleCalEvent(cancelledEntry.gcalEventId).catch(e => console.warn('Could not delete calendar event:', e));
       }
     } else {
+      const wasRescheduling = participantRescheduling;
+      if (wasRescheduling) {
+        participantRescheduling = false;
+        toast('Rescheduled successfully');
+      }
       const slot = bookingSlots.find(s => s.id === sId);
       if (slot) {
-        showBookingConfirmation(slot, p.name);
+        if (!wasRescheduling) showBookingConfirmation(slot, p.name);
         // Send email invite if configured
         const sent = await sendEmailInvite(p, slot, false);
         if (sent) toast('Invite sent ✓');
@@ -3014,6 +3138,12 @@ function updateIntegrationUI() {
     if (btnC) btnC.style.display = 'none';
     if (btnD) btnD.style.display = '';
     if (gcalSet) gcalSet.style.display = 'block';
+  } else if (!googleAccessToken && googleUserEmail && gcalSilentReconnect) {
+    // Persisted state — reconnecting silently
+    if (gcalSt) gcalSt.innerHTML = '<span style="color:var(--orange)">Reconnecting as ' + esc(googleUserEmail) + '…</span>';
+    if (btnC) btnC.style.display = 'none';
+    if (btnD) btnD.style.display = '';
+    if (gcalSet) gcalSet.style.display = 'block';
   } else {
     if (gcalSt) gcalSt.textContent = 'Not connected';
     if (btnC) btnC.style.display = '';
@@ -3102,34 +3232,100 @@ function initGapi() {
   });
 }
 
+let gcalSilentReconnect = false; // true when attempting silent reconnect on load
+
 function initGis() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email',
     callback: (resp) => {
-      if (resp.error) { toast('Google sign-in failed: ' + resp.error, 'err'); return; }
+      if (resp.error) {
+        if (gcalSilentReconnect) {
+          // Silent reconnect failed — user may have revoked access
+          gcalSilentReconnect = false;
+          clearGcalPersistedState();
+          return;
+        }
+        toast('Google sign-in failed: ' + resp.error, 'err');
+        return;
+      }
       googleAccessToken = resp.access_token;
       gapi.client.setToken({ access_token: resp.access_token });
+      gcalSilentReconnect = false;
       // Get user email
       fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
         headers: { Authorization: 'Bearer ' + resp.access_token }
       }).then(r => r.json()).then(info => {
         googleUserEmail = info.email || 'Unknown';
         updateIntegrationUI();
+        // Persist connection state to Firestore
+        persistGcalState(true, googleUserEmail);
         toast('Google Calendar connected');
       }).catch(() => {
         googleUserEmail = 'Connected';
         updateIntegrationUI();
+        persistGcalState(true, 'Connected');
       });
+    },
+    error_callback: (err) => {
+      if (gcalSilentReconnect) {
+        gcalSilentReconnect = false;
+        clearGcalPersistedState();
+      }
     },
   });
   gisInited = true;
+}
+
+async function persistGcalState(connected, email) {
+  try {
+    const doc = await db.collection('config').doc('integrations').get();
+    const data = doc.exists ? doc.data() : {};
+    data.googleConnected = connected;
+    data.googleEmail = email || '';
+    await db.collection('config').doc('integrations').set(data);
+  } catch(e) { console.error('Error persisting gcal state:', e); }
+}
+
+async function clearGcalPersistedState() {
+  try {
+    const doc = await db.collection('config').doc('integrations').get();
+    const data = doc.exists ? doc.data() : {};
+    data.googleConnected = false;
+    data.googleEmail = '';
+    await db.collection('config').doc('integrations').set(data);
+    updateIntegrationUI();
+  } catch(e) { console.error('Error clearing gcal state:', e); }
+}
+
+async function tryGcalSilentReconnect() {
+  try {
+    const doc = await db.collection('config').doc('integrations').get();
+    if (doc.exists && doc.data().googleConnected) {
+      const email = doc.data().googleEmail || '';
+      // Show persisted state immediately
+      googleUserEmail = email || 'Reconnecting...';
+      updateIntegrationUI();
+      // Wait for GIS to be ready, then silently request token
+      const waitForGis = () => {
+        if (gisInited && gapiInited && tokenClient) {
+          gcalSilentReconnect = true;
+          tokenClient.requestAccessToken({ prompt: '' });
+        } else {
+          setTimeout(waitForGis, 500);
+        }
+      };
+      waitForGis();
+    }
+  } catch(e) { console.error('Error checking gcal persisted state:', e); }
 }
 
 // Initialise on page load (scripts load async)
 window.addEventListener('load', () => {
   if (typeof gapi !== 'undefined') initGapi();
   if (typeof google !== 'undefined' && google.accounts) initGis();
+  // Attempt silent reconnect if previously connected
+  tryGcalSilentReconnect();
 });
 
 function connectGoogleCalendar() {
@@ -3149,6 +3345,7 @@ function disconnectGoogleCalendar() {
   googleAccessToken = null;
   googleUserEmail = null;
   gapi.client.setToken(null);
+  clearGcalPersistedState();
   updateIntegrationUI();
   toast('Google Calendar disconnected');
 }
