@@ -90,21 +90,19 @@ async function createCalendarEvent({ title, description, startTime, endTime, att
     const calendar = getCalendar();
     const event = {
       summary: title,
-      description: description || "",
+      description: (description || "") + (attendeeEmail ? "\n\nParticipant: " + attendeeEmail : ""),
       start: { dateTime: startTime, timeZone: "Europe/Dublin" },
       end: { dateTime: endTime, timeZone: "Europe/Dublin" },
       reminders: { useDefault: false, overrides: [{ method: "popup", minutes: reminderMinutes || 30 }] },
     };
-    if (attendeeEmail) {
-      event.attendees = [{ email: attendeeEmail }];
-      event.guestsCanModify = false;
-    }
+    // Note: Service accounts on personal Gmail can't add attendees (requires Workspace)
+    // The event is created on admin's calendar. Participant gets notified via EmailJS or .ics download.
     if (location) event.location = location;
 
     const res = await calendar.events.insert({
       calendarId: GOOGLE_CALENDAR_ID,
       resource: event,
-      sendUpdates: attendeeEmail ? "all" : "none", // sends invite email to attendee
+      sendUpdates: "none",
     });
     return { eventId: res.data.id, htmlLink: res.data.htmlLink };
   } catch (err) {

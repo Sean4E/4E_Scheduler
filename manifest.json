@@ -1,0 +1,19 @@
+{
+  "name": "4E Workshop Scheduler",
+  "short_name": "4E Scheduler",
+  "description": "Book 1-to-1 workshop sessions with ease",
+  "start_url": "/4E_Scheduler/",
+  "scope": "/4E_Scheduler/",
+  "display": "standalone",
+  "background_color": "#08080f",
+  "theme_color": "#08080f",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "logo_WHT.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

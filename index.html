@@ -51,6 +51,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>4E Workshop Scheduler</title>
+<link rel="icon" type="image/png" href="logo_WHT.png">
+<link rel="apple-touch-icon" href="logo_WHT.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#08080f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="4E Scheduler">
+<meta name="description" content="4E Workshop Scheduler — Book 1-to-1 sessions with ease">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
@@ -3019,6 +3027,11 @@ function renderBadges() {
 renderColorPalette();
 loadEmailJSSettings();
 
+// Register Service Worker for PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
 // ══════════════════════════════════════════════════════
 //  PRE-SESSION REMINDERS (Feature 8)
 // ══════════════════════════════════════════════════════
@@ -3320,7 +3333,7 @@ async function checkGcalServerStatus() {
     });
     const data = await resp.json();
     if (data.connected) {
-      if (st) st.innerHTML = '<span style="color:var(--green)">Connected</span> <span style="font-size:9px;color:var(--text-dim)">(server-side · always on)</span>';
+      if (st) st.innerHTML = '<span style="color:var(--green)">Connected</span> <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">' + (data.calendarId || '') + '</span>';
     } else {
       if (st) st.innerHTML = '<span style="color:var(--red)">Not connected</span> <span style="font-size:9px;color:var(--text-dim)">Share calendar with service account</span>';
     }
