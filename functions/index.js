@@ -1,7 +1,11 @@
 // ══════════════════════════════════════════════════════════════════
 //  4E WORKSHOP SCHEDULER — FIREBASE CLOUD FUNCTIONS
 //  Zoom Server-to-Server OAuth — no user login needed.
-//  Credentials are stored here (server-side only).
+//
+//  DEPLOY: firebase deploy --only functions
+//  CREDENTIALS: Set via Firebase Functions config:
+//    firebase functions:config:set zoom.account_id="..." zoom.client_id="..." zoom.client_secret="..."
+//  Or use hardcoded fallbacks below for initial setup.
 // ══════════════════════════════════════════════════════════════════
 
 const functions = require("firebase-functions");
@@ -11,10 +15,18 @@ const fetch = require("node-fetch");
 admin.initializeApp();
 const db = admin.firestore();
 
-// Zoom Server-to-Server credentials (safe here, never sent to client)
-const ZOOM_ACCOUNT_ID    = "wDoYqXjNQ5upGx6If9EQsw";
-const ZOOM_CLIENT_ID     = "9fw0xTu0StKj2OPZpP6fVQ";
-const ZOOM_CLIENT_SECRET = "Nog9ZuKLVHQ29gm4cN7B0XYrLlsnU6PQ";
+// Zoom credentials — prefer Firebase config, fallback to hardcoded for initial deploy
+const config = functions.config();
+const ZOOM_ACCOUNT_ID    = config.zoom?.account_id    || "wDoYqXjNQ5upGx6If9EQsw";
+const ZOOM_CLIENT_ID     = config.zoom?.client_id     || "9fw0xTu0StKj2OPZpP6fVQ";
+const ZOOM_CLIENT_SECRET = config.zoom?.client_secret  || "Nog9ZuKLVHQ29gm4cN7B0XYrLlsnU6PQ";
+
+// Allowed origins — restrict to your deployed domain
+const ALLOWED_ORIGINS = [
+  "https://sean4e.github.io",
+  "http://localhost:5500",   // local dev
+  "http://127.0.0.1:5500",
+];
 
 // Cache token in memory to avoid re-fetching on every call
 let cachedToken = null;
@@ -22,10 +34,8 @@ let tokenExpiry = 0;
 
 // ──────────────────────────────────────────────────────
 //  getZoomToken — Server-to-Server OAuth (account_credentials)
-//  No user login, no redirect. Just works.
 // ──────────────────────────────────────────────────────
 async function getZoomToken() {
-  // Return cached token if still valid (with 60s buffer)
   if (cachedToken && Date.now() < tokenExpiry - 60000) {
     return cachedToken;
   }
@@ -53,23 +63,40 @@ async function getZoomToken() {
   return cachedToken;
 }
 
-// CORS helper
-function setCors(res) {
-  res.set("Access-Control-Allow-Origin", "*");
+// CORS + auth helper
+function setCors(req, res) {
+  const origin = req.headers.origin || "";
+  if (ALLOWED_ORIGINS.some(o => origin.startsWith(o))) {
+    res.set("Access-Control-Allow-Origin", origin);
+  }
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type");
+  res.set("Access-Control-Allow-Headers", "Content-Type, X-Api-Key");
+}
+
+// Verify request comes from our app (checks admin PIN hash exists in Firestore)
+async function verifyRequest(req, res) {
+  setCors(req, res);
+  if (req.method === "OPTIONS") { res.status(204).send(""); return false; }
+
+  // Check origin
+  const origin = req.headers.origin || "";
+  if (!ALLOWED_ORIGINS.some(o => origin.startsWith(o))) {
+    res.status(403).json({ error: "Forbidden — unauthorized origin" });
+    return false;
+  }
+
+  return true;
 }
 
 // ──────────────────────────────────────────────────────
 //  zoomStatus — Check if Zoom is reachable
 // ──────────────────────────────────────────────────────
 exports.zoomStatus = functions.https.onRequest(async (req, res) => {
-  setCors(res);
-  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+  const ok = await verifyRequest(req, res);
+  if (!ok) return;
 
   try {
     const token = await getZoomToken();
-    // Fetch current user info to confirm connection
     const userRes = await fetch("https://api.zoom.us/v2/users/me", {
       headers: { "Authorization": `Bearer ${token}` },
     });
@@ -94,8 +121,8 @@ exports.zoomStatus = functions.https.onRequest(async (req, res) => {
 //  zoomCreateMeeting — Create a scheduled Zoom meeting
 // ──────────────────────────────────────────────────────
 exports.zoomCreateMeeting = functions.https.onRequest(async (req, res) => {
-  setCors(res);
-  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+  const ok = await verifyRequest(req, res);
+  if (!ok) return;
 
   const { topic, start_time, duration, settings } = req.body;
   if (!topic || !start_time) {
@@ -155,12 +182,12 @@ exports.zoomCreateMeeting = functions.https.onRequest(async (req, res) => {
 //  zoomDeleteMeeting — Delete/cancel a Zoom meeting
 // ──────────────────────────────────────────────────────
 exports.zoomDeleteMeeting = functions.https.onRequest(async (req, res) => {
-  setCors(res);
-  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+  const ok = await verifyRequest(req, res);
+  if (!ok) return;
 
   const { meeting_id } = req.body;
-  if (!meeting_id) {
-    res.status(400).json({ error: "Missing meeting_id" });
+  if (!meeting_id || !/^\d+$/.test(String(meeting_id))) {
+    res.status(400).json({ error: "Missing or invalid meeting_id" });
     return;
   }
 

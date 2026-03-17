@@ -1194,7 +1194,8 @@ let bookingSlots = [];
 
 let unsubGroups = null, unsubParticipants = null, unsubSlots = null;
 let unsubBookingSlots = null, unsubParticipant = null;
-let unsubSupGroups = null, unsubSupParticipants = null;
+let unsubSupGroups = null, unsubSupParticipants = null, unsubSupSlots = null;
+let supSlots = [];
 
 const GROUP_COLORS = ['#22d3ee','#a78bfa','#fb923c','#34d399','#f472b6','#fbbf24','#f87171','#60a5fa','#e879f9','#a3e635'];
 
@@ -1711,8 +1712,7 @@ function supParticipantRow(p, color) {
 // ══════════════════════════════════════════════════════
 //  SUPERVISOR — CALENDAR & SLOT ASSIGNMENT
 // ══════════════════════════════════════════════════════
-let supSlots = []; // slots visible to supervisor
-let unsubSupSlots = null;
+// supSlots and unsubSupSlots declared in state block above
 
 function renderSupAssignSelects() {
   // called when participants change — refresh day panel if open
@@ -2022,7 +2022,7 @@ const fmtLong  = d => new Date(d+'T12:00').toLocaleDateString('en-IE',{weekday:'
 const fmtShort = d => new Date(d+'T12:00').toLocaleDateString('en-IE',{weekday:'short',day:'numeric',month:'short'});
 const fmtMY    = dt => dt.toLocaleDateString('en-IE',{month:'long',year:'numeric'});
 const fmtTime  = t  => { const[h,m]=t.split(':').map(Number); return `${h%12||12}:${pad(m)} ${h>=12?'PM':'AM'}`; };
-const esc      = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const esc      = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 const getBooker = sId => getBookerNew(sId);
 const getGroup  = id  => groups.find(g => g.id === id);
 const groupByDate = arr => {
@@ -2646,6 +2646,9 @@ async function toggleBook(sId) {
   const remaining = p.sessionsAllocated - bookedCount(p);
   if (!isMine && b)          { toast('Already taken', 'err'); return; }
   if (!isMine && remaining<=0){ toast('No sessions remaining', 'err'); return; }
+  if (isMine && !confirm('Cancel this booking?')) return;
+  // Capture calendar event ID before removing (for deletion)
+  const cancelledEntry = isMine ? getSlotEntry(p, sId) : null;
   const newSlots = isMine
     ? removeSlotEntry(p.bookedSlots, sId)
     : addSlotEntry(p.bookedSlots, sId);
@@ -2653,6 +2656,10 @@ async function toggleBook(sId) {
     await db.collection('participants').doc(currentPid).update({ bookedSlots: newSlots });
     if (isMine) {
       toast('Booking cancelled');
+      // Delete Google Calendar event if one was created
+      if (cancelledEntry?.gcalEventId && googleAccessToken) {
+        deleteGoogleCalEvent(cancelledEntry.gcalEventId).catch(e => console.warn('Could not delete calendar event:', e));
+      }
     } else {
       const slot = bookingSlots.find(s => s.id === sId);
       if (slot) {
