@@ -819,12 +819,11 @@ input::placeholder{color:var(--text-dim)}
             <span style="font-size:18px">📅</span>
             <div style="flex:1">
               <div style="font-size:14px;font-weight:700">Google Calendar</div>
-              <div id="gcalStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Not connected</div>
+              <div id="gcalStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Checking…</div>
             </div>
-            <button class="btn-p btn-sm" id="btnGcalConnect" onclick="connectGoogleCalendar()">Connect</button>
-            <button class="btn-g btn-sm" id="btnGcalDisconnect" onclick="disconnectGoogleCalendar()" style="display:none">Disconnect</button>
+            <button class="btn-g btn-sm" id="btnGcalRefresh" onclick="checkGcalServerStatus()">Refresh</button>
           </div>
-          <div id="gcalSettings" style="display:none">
+          <div id="gcalSettings">
             <div class="toggle-wrap" onclick="toggleGcalAutoCreate()" style="margin-bottom:10px">
               <div class="toggle-track" id="gcalAutoToggle"><div class="toggle-thumb"></div></div>
               <span class="toggle-label" style="font-size:12px">Auto-create events on booking</span>
@@ -3005,6 +3004,7 @@ function switchTab(name) {
   if (name==='slots')        { renderAdminCal(); renderAllSlotsList(); }
   if (name==='participants') { renderGroupSelects(); renderParticipants(); }
   if (name==='groups')       { renderColorPalette(); renderGroups(); }
+  if (name==='settings')     { checkGcalServerStatus(); updateZoomStatusUI(); updateIntegrationUI(); }
 }
 
 function renderBadges() {
@@ -3136,23 +3136,8 @@ function updateIntegrationUI() {
   const btnC = document.getElementById('btnGcalConnect');
   const btnD = document.getElementById('btnGcalDisconnect');
   const gcalSet = document.getElementById('gcalSettings');
-  if (googleAccessToken && googleUserEmail) {
-    if (gcalSt) gcalSt.innerHTML = '<span style="color:var(--green)">Connected as ' + esc(googleUserEmail) + '</span>';
-    if (btnC) btnC.style.display = 'none';
-    if (btnD) btnD.style.display = '';
-    if (gcalSet) gcalSet.style.display = 'block';
-  } else if (gcalPreviouslyConnected && googleUserEmail) {
-    // Was connected last session — needs one-click reconnect
-    if (gcalSt) gcalSt.innerHTML = '<span style="color:var(--orange)">' + esc(googleUserEmail) + ' — session expired</span>';
-    if (btnC) { btnC.style.display = ''; btnC.textContent = 'Reconnect'; }
-    if (btnD) btnD.style.display = '';
-    if (gcalSet) gcalSet.style.display = 'block'; // keep settings visible
-  } else {
-    if (gcalSt) gcalSt.textContent = 'Not connected';
-    if (btnC) { btnC.style.display = ''; btnC.textContent = 'Connect'; }
-    if (btnD) btnD.style.display = 'none';
-    if (gcalSet) gcalSet.style.display = 'none';
-  }
+  // Google Calendar is now server-side (service account) — always show settings
+  if (gcalSet) gcalSet.style.display = 'block';
   // Gcal toggles
   const gcalAuto = document.getElementById('gcalAutoToggle');
   if (gcalAuto) gcalAuto.classList.toggle('on', integrationConfig.gcal.autoCreate);
@@ -3324,6 +3309,25 @@ window.addEventListener('load', () => {
   // Attempt silent reconnect if previously connected
   tryGcalSilentReconnect();
 });
+
+// Check server-side Google Calendar status (service account)
+async function checkGcalServerStatus() {
+  const st = document.getElementById('gcalStatus');
+  if (st) st.innerHTML = '<span style="color:var(--text-dim)">Checking…</span>';
+  try {
+    const resp = await fetch(FUNCTIONS_BASE + '/checkCalendar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    const data = await resp.json();
+    if (data.connected) {
+      if (st) st.innerHTML = '<span style="color:var(--green)">Connected</span> <span style="font-size:9px;color:var(--text-dim)">(server-side · always on)</span>';
+    } else {
+      if (st) st.innerHTML = '<span style="color:var(--red)">Not connected</span> <span style="font-size:9px;color:var(--text-dim)">Share calendar with service account</span>';
+    }
+  } catch(e) {
+    if (st) st.innerHTML = '<span style="color:var(--red)">Cannot reach server</span>';
+  }
+}
 
 function connectGoogleCalendar() {
   if (!gisInited || !gapiInited) {
