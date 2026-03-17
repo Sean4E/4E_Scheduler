@@ -3141,15 +3141,15 @@ function updateIntegrationUI() {
     if (btnC) btnC.style.display = 'none';
     if (btnD) btnD.style.display = '';
     if (gcalSet) gcalSet.style.display = 'block';
-  } else if (!googleAccessToken && googleUserEmail && gcalSilentReconnect) {
-    // Persisted state — reconnecting silently
-    if (gcalSt) gcalSt.innerHTML = '<span style="color:var(--orange)">Reconnecting as ' + esc(googleUserEmail) + '…</span>';
-    if (btnC) btnC.style.display = 'none';
+  } else if (gcalPreviouslyConnected && googleUserEmail) {
+    // Was connected last session — needs one-click reconnect
+    if (gcalSt) gcalSt.innerHTML = '<span style="color:var(--orange)">' + esc(googleUserEmail) + ' — session expired</span>';
+    if (btnC) { btnC.style.display = ''; btnC.textContent = 'Reconnect'; }
     if (btnD) btnD.style.display = '';
-    if (gcalSet) gcalSet.style.display = 'block';
+    if (gcalSet) gcalSet.style.display = 'block'; // keep settings visible
   } else {
     if (gcalSt) gcalSt.textContent = 'Not connected';
-    if (btnC) btnC.style.display = '';
+    if (btnC) { btnC.style.display = ''; btnC.textContent = 'Connect'; }
     if (btnD) btnD.style.display = 'none';
     if (gcalSet) gcalSet.style.display = 'none';
   }
@@ -3235,7 +3235,8 @@ function initGapi() {
   });
 }
 
-let gcalSilentReconnect = false; // true when attempting silent reconnect on load
+let gcalSilentReconnect = false;
+let gcalPreviouslyConnected = false; // true if was connected in a previous session
 
 function initGis() {
   tokenClient = google.accounts.oauth2.initTokenClient({
@@ -3306,19 +3307,12 @@ async function tryGcalSilentReconnect() {
     const doc = await db.collection('config').doc('integrations').get();
     if (doc.exists && doc.data().googleConnected) {
       const email = doc.data().googleEmail || '';
-      // Show persisted state immediately
-      googleUserEmail = email || 'Reconnecting...';
+      // Show persisted state — user needs to click Connect once per session
+      // Google Identity Services doesn't support silent token refresh client-side
+      // But we remember they WERE connected and show a quick-reconnect prompt
+      googleUserEmail = email;
+      gcalPreviouslyConnected = true;
       updateIntegrationUI();
-      // Wait for GIS to be ready, then silently request token
-      const waitForGis = () => {
-        if (gisInited && gapiInited && tokenClient) {
-          gcalSilentReconnect = true;
-          tokenClient.requestAccessToken({ prompt: '' });
-        } else {
-          setTimeout(waitForGis, 500);
-        }
-      };
-      waitForGis();
     }
   } catch(e) { console.error('Error checking gcal persisted state:', e); }
 }
