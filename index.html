@@ -3099,7 +3099,7 @@ function initGapi() {
 function initGis() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/calendar.events',
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email',
     callback: (resp) => {
       if (resp.error) { toast('Google sign-in failed: ' + resp.error, 'err'); return; }
       googleAccessToken = resp.access_token;

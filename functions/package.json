@@ -2,7 +2,7 @@
   "name": "4e-scheduler-functions",
   "description": "Firebase Cloud Functions for 4E Workshop Scheduler — Zoom OAuth & meeting creation",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "dependencies": {
