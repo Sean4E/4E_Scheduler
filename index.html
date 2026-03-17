@@ -53,6 +53,7 @@
 <title>4E Workshop Scheduler</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -243,10 +244,61 @@ input::placeholder{color:var(--text-dim)}
 #toast{position:fixed;top:20px;right:20px;z-index:9999;padding:10px 18px;border-radius:10px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);font-family:var(--syne);font-size:13px;font-weight:700;animation:toastIn .2s ease both;pointer-events:none;display:none}
 #toast.ok{background:var(--green-dim);border:1px solid var(--green);color:var(--green)}
 #toast.err{background:var(--red-dim);border:1px solid var(--red);color:var(--red)}
+
+/* status badges */
+.status-badge{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;padding:3px 8px;border-radius:6px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.status-booked{background:var(--purple-dim);border:1px solid rgba(167,139,250,.25);color:var(--purple)}
+.status-confirmed{background:var(--cyan-dim);border:1px solid rgba(34,211,238,.25);color:var(--cyan)}
+.status-completed{background:var(--green-dim);border:1px solid rgba(52,211,153,.25);color:var(--green)}
+.status-missed{background:var(--red-dim);border:1px solid rgba(248,113,113,.25);color:var(--red)}
+
+/* session notes input */
+.note-input{font-size:11px;padding:4px 8px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);width:100%;margin-top:4px;transition:border-color .2s}
+.note-input:focus{border-color:var(--purple);outline:none}
+.note-display{font-family:var(--mono);font-size:10px;color:var(--text-mid);margin-top:2px;font-style:italic}
+
+/* filter bar */
+.filter-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px 16px;background:var(--glass);border:1px solid var(--border);border-radius:var(--r)}
+.filter-bar .inline-field select,.filter-bar .inline-field input{font-size:11px;padding:6px 10px;width:auto;min-width:120px}
+
+/* confirm attendance button */
+.btn-confirm{background:var(--cyan-dim);border:1px solid rgba(34,211,238,.3);border-radius:8px;color:var(--cyan);font-family:var(--syne);font-size:11px;font-weight:700;padding:6px 14px;cursor:pointer;transition:all .2s}
+.btn-confirm:hover{background:rgba(34,211,238,.2);border-color:rgba(34,211,238,.5)}
+
+/* carry forward button */
+.btn-carry{background:var(--orange-dim);border:1px solid rgba(251,146,60,.3);border-radius:8px;color:var(--orange);font-family:var(--syne);font-size:11px;font-weight:700;padding:6px 14px;cursor:pointer;transition:all .2s}
+.btn-carry:hover{background:rgba(251,146,60,.2)}
+
+/* invite sent indicator */
+.invite-sent{font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px}
+
+/* lockout overlay */
+#lockoutOverlay{display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.85);backdrop-filter:blur(12px);align-items:center;justify-content:center;flex-direction:column;gap:16px;color:var(--text);text-align:center;font-family:var(--syne)}
+#lockoutOverlay .lockout-timer{font-family:var(--mono);font-size:36px;font-weight:700;color:var(--red)}
+
+/* toggle switch */
+.toggle-wrap{display:flex;align-items:center;gap:10px;cursor:pointer}
+.toggle-track{width:40px;height:22px;border-radius:11px;background:var(--border);position:relative;transition:background .2s;flex-shrink:0}
+.toggle-track.on{background:var(--purple-dark)}
+.toggle-thumb{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s}
+.toggle-track.on .toggle-thumb{left:20px}
+.toggle-label{font-size:13px;font-weight:600}
+
+/* emailjs settings */
+.emailjs-field{margin-bottom:10px}
+.emailjs-field label{font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px;display:block;margin-bottom:4px}
+.emailjs-field input{width:100%;font-size:12px;padding:8px 12px}
 </style>
 </head>
 <body>
 <div id="toast"></div>
+<div id="lockoutOverlay">
+  <div style="font-size:32px">🔒</div>
+  <h2 style="font-size:22px;font-weight:800">Too Many Attempts</h2>
+  <p style="color:var(--text-mid);font-size:14px">Please wait before trying again.</p>
+  <div class="lockout-timer" id="lockoutTimer">5:00</div>
+  <button class="btn-g" onclick="goHome();hideLockout()">← Back to Home</button>
+</div>
 
 <!-- ══════════════════════ HOME ══════════════════════ -->
 <div id="home" class="screen active">
@@ -409,6 +461,31 @@ input::placeholder{color:var(--text-dim)}
 
     <!-- SUP: OVERVIEW -->
     <div id="sup-pane-overview" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <div style="flex:1"></div>
+        <button class="btn-g btn-sm" onclick="sendReminders('sup')" id="btnSupSendReminders" title="Send reminder emails for sessions in the next 24 hours">📧 Send Reminders</button>
+      </div>
+      <div class="filter-bar card">
+        <div class="inline-field">
+          <label>STATUS</label>
+          <select id="supOvFilterStatus" onchange="renderSupOverview()">
+            <option value="all">All Statuses</option>
+            <option value="booked">Booked</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="completed">Completed</option>
+            <option value="missed">Missed</option>
+          </select>
+        </div>
+        <div class="inline-field">
+          <label>FROM</label>
+          <input type="date" id="supOvFilterFrom" onchange="renderSupOverview()" style="width:140px">
+        </div>
+        <div class="inline-field">
+          <label>TO</label>
+          <input type="date" id="supOvFilterTo" onchange="renderSupOverview()" style="width:140px">
+        </div>
+        <button class="btn-g btn-sm" onclick="clearSupOverviewFilters()">Clear</button>
+      </div>
       <div class="stats-grid" id="supStatsGrid"></div>
       <div id="supOverviewContent"></div>
     </div>
@@ -612,9 +689,37 @@ input::placeholder{color:var(--text-dim)}
 
     <!-- OVERVIEW -->
     <div id="pane-overview" style="display:none">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <div style="flex:1"></div>
+        <button class="btn-g btn-sm" onclick="sendReminders()" style="display:flex;align-items:center;gap:6px" id="btnSendReminders" title="Send reminder emails for sessions in the next 24 hours">📧 Send Reminders</button>
         <button class="btn-g btn-sm" onclick="exportCSV()" style="display:flex;align-items:center;gap:6px">📊 Export CSV</button>
+      </div>
+      <div class="filter-bar card" id="adminFilterBar">
+        <div class="inline-field">
+          <label>GROUP</label>
+          <select id="ovFilterGroup" onchange="renderOverview()">
+            <option value="all">All Groups</option>
+          </select>
+        </div>
+        <div class="inline-field">
+          <label>STATUS</label>
+          <select id="ovFilterStatus" onchange="renderOverview()">
+            <option value="all">All Statuses</option>
+            <option value="booked">Booked</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="completed">Completed</option>
+            <option value="missed">Missed</option>
+          </select>
+        </div>
+        <div class="inline-field">
+          <label>FROM</label>
+          <input type="date" id="ovFilterFrom" onchange="renderOverview()" style="width:140px">
+        </div>
+        <div class="inline-field">
+          <label>TO</label>
+          <input type="date" id="ovFilterTo" onchange="renderOverview()" style="width:140px">
+        </div>
+        <button class="btn-g btn-sm" onclick="clearOverviewFilters()">Clear</button>
       </div>
       <div class="stats-grid" id="statsGrid"></div>
       <div id="overviewContent"></div>
@@ -659,6 +764,38 @@ input::placeholder{color:var(--text-dim)}
         <div class="eyebrow" style="color:var(--green);margin-bottom:16px">SUPERVISORS</div>
         <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Per-Group Supervisor PINs</h3>
         <p style="color:var(--text-mid);font-size:13px;margin-bottom:8px;line-height:1.6">Supervisor PINs are managed per group. Go to the <strong style="color:var(--cyan);cursor:pointer" onclick="switchTab('groups')">Groups</strong> tab to set or reset a supervisor PIN for each group.</p>
+      </div>
+      <div class="card" style="padding:24px;max-width:440px;margin-bottom:20px">
+        <div class="eyebrow" style="color:var(--cyan);margin-bottom:16px">EMAIL INVITES (EMAILJS)</div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Automated Email Invites</h3>
+        <p style="color:var(--text-mid);font-size:13px;margin-bottom:16px;line-height:1.6">Send calendar invites via EmailJS when sessions are booked. Requires an <a href="https://www.emailjs.com/" target="_blank" rel="noopener" style="color:var(--cyan)">EmailJS</a> account.</p>
+        <div class="toggle-wrap" onclick="toggleEmailJS()" style="margin-bottom:16px">
+          <div class="toggle-track" id="emailjsToggle"><div class="toggle-thumb"></div></div>
+          <span class="toggle-label">Enable auto-invites</span>
+        </div>
+        <div id="emailjsSettings" style="display:none">
+          <div class="emailjs-field">
+            <label>PUBLIC KEY (USER ID)</label>
+            <input type="text" id="ejsPublicKey" placeholder="e.g. user_aBcDeFgHiJkLmN" onchange="saveEmailJSSettings()">
+          </div>
+          <div class="emailjs-field">
+            <label>SERVICE ID</label>
+            <input type="text" id="ejsServiceId" placeholder="e.g. service_abc123" onchange="saveEmailJSSettings()">
+          </div>
+          <div class="emailjs-field">
+            <label>TEMPLATE ID (INVITE)</label>
+            <input type="text" id="ejsTemplateId" placeholder="e.g. template_xyz789" onchange="saveEmailJSSettings()">
+          </div>
+          <div class="divider"></div>
+          <div class="toggle-wrap" onclick="toggleReminders()" style="margin-bottom:12px">
+            <div class="toggle-track" id="reminderToggle"><div class="toggle-thumb"></div></div>
+            <span class="toggle-label">Enable reminders</span>
+          </div>
+          <div class="emailjs-field">
+            <label>REMINDER TEMPLATE ID <span style="font-size:8px;color:var(--text-dim)">(OPTIONAL — USES INVITE TEMPLATE IF BLANK)</span></label>
+            <input type="text" id="ejsReminderTemplateId" placeholder="e.g. template_reminder" onchange="saveEmailJSSettings()">
+          </div>
+        </div>
       </div>
       <div class="card" style="padding:24px;max-width:440px">
         <div class="eyebrow" style="color:var(--red);margin-bottom:16px">DANGER ZONE</div>
@@ -752,8 +889,8 @@ const db = firebase.firestore();
 // ══════════════════════════════════════════════════════
 //  PIN / AUTH STATE
 // ══════════════════════════════════════════════════════
-let adminAuthed = false; // true after correct PIN this session
-let supAuthed   = false; // true after correct supervisor PIN this session
+let adminAuthed = false;
+let supAuthed   = false;
 
 async function sha256(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -761,15 +898,177 @@ async function sha256(str) {
 }
 
 // ══════════════════════════════════════════════════════
+//  SESSION TIMEOUT (Feature 7)
+// ══════════════════════════════════════════════════════
+let idleTimer = null;
+const IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+function resetIdleTimer() {
+  clearTimeout(idleTimer);
+  if (adminAuthed || supAuthed) {
+    idleTimer = setTimeout(() => {
+      if (adminAuthed) { adminAuthed = false; stopAdminListeners(); }
+      if (supAuthed) { supAuthed = false; supGroupId = null; stopSupListeners(); }
+      goHome();
+      toast('Session timed out — please log in again', 'err');
+    }, IDLE_TIMEOUT);
+  }
+}
+
+['click','keydown','mousemove','touchstart','scroll'].forEach(evt => {
+  document.addEventListener(evt, resetIdleTimer, { passive: true });
+});
+
+// ══════════════════════════════════════════════════════
+//  PIN RATE LIMITING (Feature 7)
+// ══════════════════════════════════════════════════════
+const MAX_PIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 5 * 60 * 1000; // 5 minutes
+let lockoutInterval = null;
+
+function getPinAttempts(key) {
+  try {
+    const data = JSON.parse(localStorage.getItem('4e_pin_' + key) || '{}');
+    if (data.lockUntil && Date.now() < data.lockUntil) return data;
+    if (data.lockUntil && Date.now() >= data.lockUntil) { localStorage.removeItem('4e_pin_' + key); return { count: 0 }; }
+    return data.count ? data : { count: 0 };
+  } catch(e) { return { count: 0 }; }
+}
+
+function recordPinAttempt(key) {
+  const data = getPinAttempts(key);
+  data.count = (data.count || 0) + 1;
+  if (data.count >= MAX_PIN_ATTEMPTS) {
+    data.lockUntil = Date.now() + LOCKOUT_DURATION;
+    showLockout(data.lockUntil);
+  }
+  localStorage.setItem('4e_pin_' + key, JSON.stringify(data));
+  return data;
+}
+
+function clearPinAttempts(key) {
+  localStorage.removeItem('4e_pin_' + key);
+}
+
+function isLockedOut(key) {
+  const data = getPinAttempts(key);
+  if (data.lockUntil && Date.now() < data.lockUntil) {
+    showLockout(data.lockUntil);
+    return true;
+  }
+  return false;
+}
+
+function showLockout(until) {
+  const overlay = document.getElementById('lockoutOverlay');
+  overlay.style.display = 'flex';
+  clearInterval(lockoutInterval);
+  lockoutInterval = setInterval(() => {
+    const rem = until - Date.now();
+    if (rem <= 0) { hideLockout(); return; }
+    const m = Math.floor(rem / 60000);
+    const s = Math.floor((rem % 60000) / 1000);
+    document.getElementById('lockoutTimer').textContent = m + ':' + String(s).padStart(2, '0');
+  }, 500);
+}
+
+function hideLockout() {
+  document.getElementById('lockoutOverlay').style.display = 'none';
+  clearInterval(lockoutInterval);
+}
+
+// ══════════════════════════════════════════════════════
+//  EMAILJS SETTINGS (Feature 3)
+// ══════════════════════════════════════════════════════
+let emailJSConfig = { enabled: false, remindersEnabled: false, publicKey: '', serviceId: '', templateId: '', reminderTemplateId: '' };
+
+async function loadEmailJSSettings() {
+  try {
+    const doc = await db.collection('config').doc('emailjs').get();
+    if (doc.exists) emailJSConfig = { ...emailJSConfig, ...doc.data() };
+    updateEmailJSUI();
+  } catch(e) { console.error('Error loading EmailJS settings:', e); }
+}
+
+function updateEmailJSUI() {
+  const toggle = document.getElementById('emailjsToggle');
+  const settings = document.getElementById('emailjsSettings');
+  const reminderToggle = document.getElementById('reminderToggle');
+  if (toggle) toggle.classList.toggle('on', emailJSConfig.enabled);
+  if (settings) settings.style.display = emailJSConfig.enabled ? 'block' : 'none';
+  if (reminderToggle) reminderToggle.classList.toggle('on', emailJSConfig.remindersEnabled);
+  const fields = { ejsPublicKey: 'publicKey', ejsServiceId: 'serviceId', ejsTemplateId: 'templateId', ejsReminderTemplateId: 'reminderTemplateId' };
+  Object.entries(fields).forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
+    if (el && !el.matches(':focus')) el.value = emailJSConfig[key] || '';
+  });
+  // Show/hide reminder buttons
+  const show = emailJSConfig.enabled && emailJSConfig.remindersEnabled;
+  const btn1 = document.getElementById('btnSendReminders');
+  const btn2 = document.getElementById('btnSupSendReminders');
+  if (btn1) btn1.style.display = show ? 'flex' : 'none';
+  if (btn2) btn2.style.display = show ? 'flex' : 'none';
+}
+
+async function toggleEmailJS() {
+  emailJSConfig.enabled = !emailJSConfig.enabled;
+  await saveEmailJSSettings();
+}
+
+async function toggleReminders() {
+  emailJSConfig.remindersEnabled = !emailJSConfig.remindersEnabled;
+  await saveEmailJSSettings();
+}
+
+async function saveEmailJSSettings() {
+  const fields = { ejsPublicKey: 'publicKey', ejsServiceId: 'serviceId', ejsTemplateId: 'templateId', ejsReminderTemplateId: 'reminderTemplateId' };
+  Object.entries(fields).forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
+    if (el) emailJSConfig[key] = el.value.trim();
+  });
+  try {
+    await db.collection('config').doc('emailjs').set(emailJSConfig);
+    updateEmailJSUI();
+    toast('EmailJS settings saved ✓');
+  } catch(e) { toast('Error saving EmailJS settings', 'err'); }
+}
+
+async function sendEmailInvite(participant, slot, isReminder) {
+  if (!emailJSConfig.enabled || !participant.email) return false;
+  if (!emailJSConfig.publicKey || !emailJSConfig.serviceId || !emailJSConfig.templateId) return false;
+  const { start, end, dur } = slotToDateTimes(slot);
+  const g = getGroup(slot.groupId);
+  const link = getMeetLink(slot);
+  const icsContent = generateICS(slot, participant.name);
+  const templateId = isReminder && emailJSConfig.reminderTemplateId ? emailJSConfig.reminderTemplateId : emailJSConfig.templateId;
+  try {
+    await emailjs.send(emailJSConfig.serviceId, templateId, {
+      to_email: participant.email,
+      to_name: participant.name,
+      session_date: fmtLong(slot.date),
+      session_time: fmtTime(slot.time),
+      session_duration: dur + ' minutes',
+      session_label: slot.label || '',
+      group_name: g ? g.name : '',
+      meeting_link: link || '',
+      ics_content: icsContent,
+      is_reminder: isReminder ? 'yes' : 'no',
+      subject: isReminder ? 'Reminder: 4E Workshop Session Tomorrow' : '4E Workshop Session Booked',
+    }, emailJSConfig.publicKey);
+    return true;
+  } catch(e) { console.error('EmailJS send error:', e); return false; }
+}
+
+// ══════════════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════════════
 let currentPid       = null;
-let pinBuffer        = '';   // digits being entered on PIN screen
-let supPinBuffer     = '';   // digits being entered on supervisor PIN screen
-let supEditingId     = null; // participant being edited in supervisor view
-let cpBuffer         = '';   // digits being entered in Change PIN flow
-let cpTempPin        = '';   // first entry for confirmation
-let cpStep           = 'new'; // 'new' | 'confirm'
+let pinBuffer        = '';
+let supPinBuffer     = '';
+let supEditingId     = null;
+let cpBuffer         = '';
+let cpTempPin        = '';
+let cpStep           = 'new';
 let adminCalDate     = new Date();
 let bookingCalDate   = new Date();
 let adminSelDate     = null;
@@ -778,18 +1077,85 @@ let editingId        = null;
 let selectedColor    = '#22d3ee';
 let toastTimer       = null;
 
-// In-memory mirrors of Firestore
 let groups       = [];
 let participants = [];
 let slots        = [];
-let bookingSlots = []; // filtered for current participant
+let bookingSlots = [];
 
-// Listener handles
 let unsubGroups = null, unsubParticipants = null, unsubSlots = null;
 let unsubBookingSlots = null, unsubParticipant = null;
 let unsubSupGroups = null, unsubSupParticipants = null;
 
 const GROUP_COLORS = ['#22d3ee','#a78bfa','#fb923c','#34d399','#f472b6','#fbbf24','#f87171','#60a5fa','#e879f9','#a3e635'];
+
+// ══════════════════════════════════════════════════════
+//  BOOKED SLOTS HELPERS (Feature 2 — backward compat)
+// ══════════════════════════════════════════════════════
+// bookedSlots can be: ["slotId1","slotId2"] (old) or [{slotId:"X",status:"booked",notes:""}] (new)
+function getSlotEntry(p, slotId) {
+  if (!p.bookedSlots) return null;
+  for (const entry of p.bookedSlots) {
+    if (typeof entry === 'string' && entry === slotId) return { slotId, status: 'booked', notes: '' };
+    if (typeof entry === 'object' && entry.slotId === slotId) return entry;
+  }
+  return null;
+}
+
+function isBooked(p, slotId) {
+  if (!p.bookedSlots) return false;
+  return p.bookedSlots.some(e => (typeof e === 'string' ? e : e.slotId) === slotId);
+}
+
+function getSlotIdFromEntry(entry) {
+  return typeof entry === 'string' ? entry : entry.slotId;
+}
+
+function getSlotStatus(p, slotId) {
+  const entry = getSlotEntry(p, slotId);
+  return entry ? entry.status || 'booked' : null;
+}
+
+function getSlotNotes(p, slotId) {
+  const entry = getSlotEntry(p, slotId);
+  return entry ? entry.notes || '' : '';
+}
+
+function bookedCount(p) {
+  return p.bookedSlots ? p.bookedSlots.length : 0;
+}
+
+function normalizeEntry(entry) {
+  if (typeof entry === 'string') return { slotId: entry, status: 'booked', notes: '' };
+  return entry;
+}
+
+function updateSlotEntry(bookedSlots, slotId, updates) {
+  return (bookedSlots || []).map(e => {
+    const id = getSlotIdFromEntry(e);
+    if (id !== slotId) return normalizeEntry(e);
+    const norm = normalizeEntry(e);
+    return { ...norm, ...updates };
+  });
+}
+
+function removeSlotEntry(bookedSlots, slotId) {
+  return (bookedSlots || []).filter(e => getSlotIdFromEntry(e) !== slotId);
+}
+
+function addSlotEntry(bookedSlots, slotId) {
+  return [...(bookedSlots || []).map(normalizeEntry), { slotId, status: 'booked', notes: '' }];
+}
+
+function statusBadge(status) {
+  const labels = { booked: 'BOOKED', confirmed: 'CONFIRMED', completed: 'COMPLETED', missed: 'MISSED' };
+  const label = labels[status] || labels.booked;
+  return '<span class="status-badge status-' + (status || 'booked') + '">' + label + '</span>';
+}
+
+// Updated getBooker: works with both old string and new object format
+function getBookerNew(sId) {
+  return participants.find(p => isBooked(p, sId));
+}
 
 // ══════════════════════════════════════════════════════
 //  CALENDAR EXPORT HELPERS
@@ -902,9 +1268,8 @@ function showBookingConfirmation(slot, participantName) {
 //  PIN FUNCTIONS
 // ══════════════════════════════════════════════════════
 async function goAdmin() {
-  // If already authed this session, go straight in
   if (adminAuthed) { startAdminListeners(); renderAdminShell(); showScreen('admin'); return; }
-  // Load PIN screen
+  if (isLockedOut('admin')) return;
   pinBuffer = '';
   const snap = await db.collection('config').doc('admin').get();
   const hasPIN = snap.exists && snap.data().pinHash;
@@ -938,14 +1303,16 @@ function pinDel() {
 }
 
 async function processPIN() {
+  if (isLockedOut('admin')) return;
   const snap = await db.collection('config').doc('admin').get();
   const hasPIN = snap.exists && snap.data().pinHash;
 
   if (!hasPIN) {
-    // First time — store the PIN
     const hash = await sha256(pinBuffer);
     await db.collection('config').doc('admin').set({ pinHash: hash });
     adminAuthed = true;
+    clearPinAttempts('admin');
+    resetIdleTimer();
     startAdminListeners();
     renderAdminShell();
     showScreen('admin');
@@ -954,18 +1321,21 @@ async function processPIN() {
     const hash = await sha256(pinBuffer);
     if (hash === snap.data().pinHash) {
       adminAuthed = true;
+      clearPinAttempts('admin');
+      resetIdleTimer();
       startAdminListeners();
       renderAdminShell();
       showScreen('admin');
     } else {
-      // Wrong PIN — shake and clear
+      const data = recordPinAttempt('admin');
       const dots = document.getElementById('pinDots');
       dots.classList.add('shake');
       setTimeout(() => dots.classList.remove('shake'), 400);
       pinBuffer = '';
       updatePinDots('pinDots', 0);
       const err = document.getElementById('pinErr');
-      err.textContent = 'Incorrect PIN';
+      const remaining = MAX_PIN_ATTEMPTS - (data.count || 0);
+      err.textContent = data.lockUntil ? 'Too many attempts — locked for 5 minutes' : `Incorrect PIN (${remaining} attempt${remaining!==1?'s':''} left)`;
       err.style.display = 'block';
     }
   }
@@ -973,6 +1343,7 @@ async function processPIN() {
 
 function doLogout() {
   adminAuthed = false;
+  clearTimeout(idleTimer);
   stopAdminListeners();
   goHome();
 }
@@ -984,6 +1355,7 @@ let supGroupId = null; // which group this supervisor is scoped to
 
 async function goSupervisor() {
   if (supAuthed && supGroupId) { startSupListeners(); renderSupShell(); showScreen('supervisor'); return; }
+  if (isLockedOut('supervisor')) return;
   supPinBuffer = '';
   document.getElementById('supPinTitle').textContent = 'Enter PIN';
   document.getElementById('supPinSub').textContent   = 'Enter the 4-digit PIN provided by your workshop host.';
@@ -1014,8 +1386,8 @@ function supPinDel() {
 }
 
 async function processSupPIN() {
+  if (isLockedOut('supervisor')) return;
   const hash = await sha256(supPinBuffer);
-  // Check all groups for a matching supervisor PIN
   const snap = await db.collection('groups').get();
   const allGroups = snap.docs.map(d => ({id: d.id, ...d.data()}));
   const match = allGroups.find(g => g.supervisorPinHash === hash);
@@ -1024,18 +1396,22 @@ async function processSupPIN() {
     supAuthed = true;
     supGroupId = match.id;
     groups = allGroups;
+    clearPinAttempts('supervisor');
+    resetIdleTimer();
     startSupListeners();
     renderSupShell();
     showScreen('supervisor');
     toast(`Welcome, ${match.name} supervisor`);
   } else {
+    const data = recordPinAttempt('supervisor');
     const dots = document.getElementById('supPinDots');
     dots.classList.add('shake');
     setTimeout(() => dots.classList.remove('shake'), 400);
     supPinBuffer = '';
     updateSupPinDots(0);
     const err = document.getElementById('supPinErr');
-    err.textContent = 'PIN not recognised — contact your workshop host.';
+    const remaining = MAX_PIN_ATTEMPTS - (data.count || 0);
+    err.textContent = data.lockUntil ? 'Too many attempts — locked for 5 minutes' : `PIN not recognised (${remaining} attempt${remaining!==1?'s':''} left)`;
     err.style.display = 'block';
   }
 }
@@ -1043,6 +1419,7 @@ async function processSupPIN() {
 function doSupLogout() {
   supAuthed = false;
   supGroupId = null;
+  clearTimeout(idleTimer);
   stopSupListeners();
   goHome();
 }
@@ -1083,8 +1460,8 @@ function startSupListeners() {
   unsubSupSlots = db.collection('slots').orderBy('date').onSnapshot(snap => {
     const all = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => a.date===b.date ? (a.time||'').localeCompare(b.time||'') : 0);
     supSlots = all.filter(s => !supGroupId || s.groupId==='all' || s.groupId===supGroupId);
-    renderSupSlotPicker();
-    renderSupAssignedList();
+    renderSupCal();
+    if (supSelDate) renderSupDayPanel(supSelDate);
   }, err => console.error('sup slots listener:', err));
 }
 
@@ -1193,7 +1570,8 @@ function renderSupParticipants() {
 }
 
 function supParticipantRow(p, color) {
-  const pct = Math.min(100, ((p.bookedSlots?.length||0) / p.sessionsAllocated) * 100);
+  const bc = bookedCount(p);
+  const pct = Math.min(100, (bc / p.sessionsAllocated) * 100);
   const full = pct >= 100;
   const isEd = supEditingId === p.id;
   return `<div class="card p-row">
@@ -1202,7 +1580,7 @@ function supParticipantRow(p, color) {
       <div class="p-name">${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
       <div class="prog-wrap">
         <div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>
-        <span class="p-stat">${p.bookedSlots?.length||0}/${p.sessionsAllocated}</span>
+        <span class="p-stat">${bc}/${p.sessionsAllocated}</span>
         ${full?'<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px">FULL</span>':''}
       </div>
     </div>
@@ -1262,9 +1640,8 @@ function renderSupDayPanel(ds) {
     return;
   }
 
-  // Participant selector for assignment
   const partOptions = scoped.filter(p => {
-    const rem = p.sessionsAllocated - (p.bookedSlots?.length||0);
+    const rem = p.sessionsAllocated - bookedCount(p);
     return rem > 0;
   });
 
@@ -1277,7 +1654,7 @@ function renderSupDayPanel(ds) {
         <select id="supDayAssignPart" style="flex:1;min-width:140px" onchange="supAssignPid=this.value">
           <option value="">Select participant…</option>
           ${partOptions.map(p => {
-            const rem = p.sessionsAllocated - (p.bookedSlots?.length||0);
+            const rem = p.sessionsAllocated - bookedCount(p);
             return `<option value="${p.id}" ${p.id===supAssignPid?'selected':''}>${esc(p.name)} (${rem} left)</option>`;
           }).join('')}
         </select>
@@ -1289,6 +1666,8 @@ function renderSupDayPanel(ds) {
   html += daySlots.map(s => {
     const b = getBooker(s.id);
     const isTaken = !!b;
+    const status = b ? getSlotStatus(b, s.id) : null;
+    const notes = b ? getSlotNotes(b, s.id) : '';
     let cls = 'sc';
     if (isTaken) cls += ' sc-mine';
     return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}" ${!isTaken?`onclick="supQuickAssign('${s.id}')"`:''}>
@@ -1298,13 +1677,20 @@ function renderSupDayPanel(ds) {
       <div class="sc-status" style="color:${isTaken?'var(--purple)':'var(--green)'}">
         ${isTaken?'● '+esc(b.name):'AVAILABLE'}
       </div>
-      ${isTaken?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
+      ${isTaken ? `<div style="margin-top:4px">${statusBadge(status)}</div>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
+        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓ Done</button>
+        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗ Missed</button>
+        ${status==='missed'?`<button class="btn-carry" style="font-size:9px;padding:3px 8px" onclick="carryForward('${b.id}','${s.id}')">↻ Carry Forward</button>`:''}
         <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Google</a>
         <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Outlook</a>
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(supSlots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
         ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
         <button class="btn-rm" style="font-size:14px" onclick="supUnassignSlot('${b.id}','${s.id}')" title="Unassign">×</button>
-      </div>`:`<div class="sc-hint">Click to assign</div>`}
+      </div>
+      <div onclick="event.stopPropagation()" style="margin-top:4px">
+        <input class="note-input" placeholder="Add note…" value="${esc(notes)}" onchange="updateSlotNote('${b.id}','${s.id}',this.value)">
+      </div>` : `<div class="sc-hint">Click to assign</div>`}
     </div>`;
   }).join('');
 
@@ -1316,15 +1702,21 @@ async function supQuickAssign(sid) {
   if (!supAssignPid) { toast('Select a participant first', 'err'); return; }
   const p = participants.find(x => x.id === supAssignPid);
   if (!p) return;
-  const rem = p.sessionsAllocated - (p.bookedSlots?.length||0);
+  const rem = p.sessionsAllocated - bookedCount(p);
   if (rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
-  if (p.bookedSlots?.includes(sid)) { toast('Already booked', 'err'); return; }
+  if (isBooked(p, sid)) { toast('Already booked', 'err'); return; }
   if (getBooker(sid)) { toast('Slot already taken', 'err'); return; }
   try {
     await db.collection('participants').doc(supAssignPid).update({
-      bookedSlots: [...(p.bookedSlots||[]), sid]
+      bookedSlots: addSlotEntry(p.bookedSlots, sid)
     });
     toast(`Assigned to ${p.name} ✓`);
+    // Send email invite if configured
+    const slot = supSlots.find(x => x.id === sid);
+    if (slot) {
+      const sent = await sendEmailInvite(p, slot, false);
+      if (sent) toast('Invite sent ✓');
+    }
   } catch(e) { toast('Error assigning slot', 'err'); }
 }
 
@@ -1333,15 +1725,73 @@ async function supUnassignSlot(pid, sid) {
   if (!p) return;
   try {
     await db.collection('participants').doc(pid).update({
-      bookedSlots: (p.bookedSlots||[]).filter(s => s !== sid)
+      bookedSlots: removeSlotEntry(p.bookedSlots, sid)
     });
     toast('Slot unassigned');
   } catch(e) { toast('Error unassigning slot', 'err'); }
 }
 
+// ══════════════════════════════════════════════════════
+//  STATUS MANAGEMENT (Feature 2)
+// ══════════════════════════════════════════════════════
+async function markSlotStatus(pid, sid, status) {
+  const p = participants.find(x => x.id === pid);
+  if (!p) return;
+  try {
+    await db.collection('participants').doc(pid).update({
+      bookedSlots: updateSlotEntry(p.bookedSlots, sid, { status })
+    });
+    toast(`Marked as ${status} ✓`);
+  } catch(e) { toast('Error updating status', 'err'); }
+}
+
+async function carryForward(pid, sid) {
+  const p = participants.find(x => x.id === pid);
+  if (!p) return;
+  try {
+    // Remove the missed slot and add 1 to allocation
+    await db.collection('participants').doc(pid).update({
+      bookedSlots: removeSlotEntry(p.bookedSlots, sid),
+      sessionsAllocated: (p.sessionsAllocated || 1) + 1
+    });
+    toast('Session carried forward — allocation increased by 1 ✓');
+  } catch(e) { toast('Error carrying forward', 'err'); }
+}
+
+async function updateSlotNote(pid, sid, note) {
+  const p = participants.find(x => x.id === pid);
+  if (!p) return;
+  try {
+    await db.collection('participants').doc(pid).update({
+      bookedSlots: updateSlotEntry(p.bookedSlots, sid, { notes: note })
+    });
+  } catch(e) { toast('Error saving note', 'err'); }
+}
+
+// ══════════════════════════════════════════════════════
+//  PARTICIPANT CONFIRMATION (Feature 4)
+// ══════════════════════════════════════════════════════
+async function confirmAttendance(sid) {
+  const p = participants.find(x => x.id === currentPid);
+  if (!p) return;
+  try {
+    await db.collection('participants').doc(currentPid).update({
+      bookedSlots: updateSlotEntry(p.bookedSlots, sid, { status: 'confirmed' })
+    });
+    toast('Attendance confirmed ✓');
+  } catch(e) { toast('Error confirming', 'err'); }
+}
+
+function clearSupOverviewFilters() {
+  document.getElementById('supOvFilterStatus').value = 'all';
+  document.getElementById('supOvFilterFrom').value = '';
+  document.getElementById('supOvFilterTo').value = '';
+  renderSupOverview();
+}
+
 function renderSupOverview() {
   const scoped = supGroupId ? participants.filter(p => p.groupId === supGroupId) : participants;
-  const totalBooked = scoped.reduce((a,p) => a+(p.bookedSlots?.length||0), 0);
+  const totalBooked = scoped.reduce((a,p) => a+bookedCount(p), 0);
   const totalAlloc  = scoped.reduce((a,p) => a+p.sessionsAllocated, 0);
   document.getElementById('supStatsGrid').innerHTML = [
     {l:'Participants',v:scoped.length,c:'var(--purple)'},
@@ -1350,17 +1800,42 @@ function renderSupOverview() {
     {l:'Sessions Allocated',v:totalAlloc,c:'var(--cyan)'},
   ].map(s=>`<div class="card stat-card"><div class="stat-n" style="color:${s.c}">${s.v}</div><div class="stat-l">${s.l}</div></div>`).join('');
 
+  const statusFilter = document.getElementById('supOvFilterStatus')?.value || 'all';
+  const fromDate = document.getElementById('supOvFilterFrom')?.value || '';
+  const toDate = document.getElementById('supOvFilterTo')?.value || '';
+
+  let filtered = supSlots.filter(s => {
+    if (fromDate && s.date < fromDate) return false;
+    if (toDate && s.date > toDate) return false;
+    if (statusFilter !== 'all') {
+      const b = getBooker(s.id);
+      if (!b) return false;
+      const st = getSlotStatus(b, s.id) || 'booked';
+      if (st !== statusFilter) return false;
+    }
+    return true;
+  });
+
   const oc = document.getElementById('supOverviewContent');
-  if (!supSlots.length) { oc.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots available.</div>`; return; }
-  oc.innerHTML = groupByDate(supSlots).map(([d,slts])=>`
+  if (!filtered.length) { oc.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots match the current filters.</div>`; return; }
+  oc.innerHTML = groupByDate(filtered).map(([d,slts])=>`
     <div class="date-heading">${fmtLong(d)}</div>
     <div class="ov-mini-grid">${slts.map(s=>{
       const b=getBooker(s.id);
+      const status = b ? (getSlotStatus(b, s.id) || 'booked') : null;
+      const notes = b ? getSlotNotes(b, s.id) : '';
       return `<div class="card ov-mini" style="background:${b?'var(--purple-dim)':'var(--glass)'};border-color:${b?'rgba(167,139,250,.25)':'var(--border)'}">
         <div class="ov-time">${fmtTime(s.time)}</div>
         ${s.label?`<div class="ov-lbl">${esc(s.label)}</div>`:''}
         <div class="ov-who" style="color:${b?'var(--purple)':'var(--green)'}">${b?esc(b.name):'Available'}</div>
+        ${b?statusBadge(status):''}
+        ${notes?`<div class="note-display">${esc(notes)}</div>`:''}
         ${s.meetingLink?'<span style="font-size:10px">🔗</span>':''}
+        ${b?`<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+          <button class="btn-g btn-sm" style="font-size:8px;padding:2px 6px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓</button>
+          <button class="btn-g btn-sm" style="font-size:8px;padding:2px 6px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗</button>
+          ${status==='missed'?`<button class="btn-carry" style="font-size:8px;padding:2px 6px" onclick="carryForward('${b.id}','${s.id}')">↻</button>`:''}
+        </div>`:''}
       </div>`;
     }).join('')}</div>`).join('');
 }
@@ -1438,7 +1913,7 @@ const fmtShort = d => new Date(d+'T12:00').toLocaleDateString('en-IE',{weekday:'
 const fmtMY    = dt => dt.toLocaleDateString('en-IE',{month:'long',year:'numeric'});
 const fmtTime  = t  => { const[h,m]=t.split(':').map(Number); return `${h%12||12}:${pad(m)} ${h>=12?'PM':'AM'}`; };
 const esc      = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const getBooker = sId => participants.find(p => p.bookedSlots?.includes(sId));
+const getBooker = sId => getBookerNew(sId);
 const getGroup  = id  => groups.find(g => g.id === id);
 const groupByDate = arr => {
   const m={};
@@ -1521,6 +1996,7 @@ function renderAdminShell() {
   selectedColor = GROUP_COLORS[0];
   renderColorPalette();
   renderGroupSelects();
+  loadEmailJSSettings();
   switchTab('groups');
 }
 
@@ -1690,7 +2166,8 @@ function renderParticipants() {
 }
 
 function participantRow(p, color) {
-  const pct = Math.min(100, ((p.bookedSlots?.length||0) / p.sessionsAllocated) * 100);
+  const bc = bookedCount(p);
+  const pct = Math.min(100, (bc / p.sessionsAllocated) * 100);
   const full = pct >= 100;
   const isEd = editingId === p.id;
   return `<div class="card p-row">
@@ -1699,7 +2176,7 @@ function participantRow(p, color) {
       <div class="p-name">${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
       <div class="prog-wrap">
         <div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>
-        <span class="p-stat">${p.bookedSlots?.length||0}/${p.sessionsAllocated}</span>
+        <span class="p-stat">${bc}/${p.sessionsAllocated}</span>
         ${full?'<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px">FULL</span>':''}
       </div>
     </div>
@@ -1836,10 +2313,10 @@ async function removeSlot(id) {
   try {
     const batch = db.batch();
     batch.delete(db.collection('slots').doc(id));
-    // cascade: remove from any participant's bookedSlots
-    participants.filter(p => p.bookedSlots?.includes(id)).forEach(p => {
+    // cascade: remove from any participant's bookedSlots (supports both formats)
+    participants.filter(p => isBooked(p, id)).forEach(p => {
       batch.update(db.collection('participants').doc(p.id), {
-        bookedSlots: p.bookedSlots.filter(s => s !== id)
+        bookedSlots: removeSlotEntry(p.bookedSlots, id)
       });
     });
     await batch.commit();
@@ -1918,6 +2395,8 @@ function renderAdminDayPanel(ds) {
         const b = getBooker(s.id);
         const g = getGroup(s.groupId);
         const link = getMeetLink(s);
+        const status = b ? (getSlotStatus(b, s.id) || 'booked') : null;
+        const notes = b ? getSlotNotes(b, s.id) : '';
         return `<div class="card" style="padding:10px 16px;margin-bottom:5px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div class="asl-time" style="color:${b?'var(--purple)':'var(--text)'}">${fmtTime(s.time)}</div>
@@ -1925,8 +2404,15 @@ function renderAdminDayPanel(ds) {
             ${link?`<a href="${esc(link)}" target="_blank" rel="noopener" style="font-size:11px;text-decoration:none" title="${esc(link)}">🔗</a>`:''}
             ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
             ${b?`<div class="booked-name">${esc(b.name)}</div>`:`<div class="avail-tag">AVAIL</div>`}
+            ${b?statusBadge(status):''}
             <button class="btn-rm" onclick="removeSlot('${s.id}')">×</button>
           </div>
+          ${b?`<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+            <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓ Done</button>
+            <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗ Missed</button>
+            ${status==='missed'?`<button class="btn-carry" style="font-size:9px;padding:3px 8px" onclick="carryForward('${b.id}','${s.id}')">↻ Carry Forward</button>`:''}
+          </div>`:''}
+          ${b?`<div style="margin-top:4px"><input class="note-input" placeholder="Add note…" value="${esc(notes)}" onchange="updateSlotNote('${b.id}','${s.id}',this.value)"></div>`:''}
           <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
             <span style="font-family:var(--mono);font-size:8px;color:var(--text-dim);letter-spacing:1px">🔗</span>
             <input type="text" value="${esc(s.meetingLink||'')}" placeholder="${g?.meetingLink?'Inherited from group':'Add meeting link…'}" style="flex:1;font-size:10px;padding:4px 8px;background:${s.meetingLink?'rgba(34,211,238,.06)':'rgba(255,255,255,.03)'}" onchange="updateSlotMeetLink('${s.id}',this.value)">
@@ -1952,6 +2438,7 @@ function renderAllSlotsList() {
         ${getMeetLink(s)?'<span style="font-size:10px" title="Meeting link">🔗</span>':''}
         ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 7px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
         ${b?`<div class="booked-name">${esc(b.name)}</div>`:`<div class="avail-tag">AVAIL</div>`}
+        ${b?statusBadge(getSlotStatus(b, s.id) || 'booked'):''}
         <button class="btn-rm" onclick="removeSlot('${s.id}')">×</button>
       </div>`;
     }).join('')}
@@ -1965,7 +2452,7 @@ function bookingNext() { bookingCalDate = new Date(bookingCalDate.getFullYear(),
 function bookingDotsFn(ds) {
   const p = participants.find(x => x.id === currentPid); if (!p) return [];
   return bookingSlots.filter(s => s.date===ds).map(s => {
-    if (p.bookedSlots?.includes(s.id)) return 'var(--purple)';
+    if (isBooked(p, s.id)) return 'var(--purple)';
     if (getBooker(s.id)) return 'var(--text-dim)';
     return 'var(--green)';
   });
@@ -1982,7 +2469,7 @@ function bookingDayClick(ds) {
 
 function renderBookingDayPanel(ds) {
   const p       = participants.find(x => x.id === currentPid); if (!p) return;
-  const remaining = p.sessionsAllocated - (p.bookedSlots?.length||0);
+  const remaining = p.sessionsAllocated - bookedCount(p);
   const daySlots  = bookingSlots.filter(s => s.date===ds);
   const el = document.getElementById('bookingDayPanel');
   if (!daySlots.length) { el.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots on this day.</div>`; return; }
@@ -1993,10 +2480,11 @@ function renderBookingDayPanel(ds) {
     </div>
     <div class="time-slots">
       ${daySlots.map(s => {
-        const isMine  = p.bookedSlots?.includes(s.id);
+        const isMine  = isBooked(p, s.id);
         const b       = getBooker(s.id);
         const isTaken = b && !isMine;
         const canBook = !isTaken && (isMine || remaining>0);
+        const status  = isMine ? (getSlotStatus(p, s.id) || 'booked') : null;
         let cls = 'sc';
         if (isMine)  cls += ' sc-mine';
         if (isTaken) cls += ' sc-taken';
@@ -2007,7 +2495,9 @@ function renderBookingDayPanel(ds) {
           <div class="sc-status" style="color:${isMine?'var(--purple)':isTaken?'var(--text-dim)':'var(--green)'}">
             ${isMine?'● BOOKED':isTaken?'TAKEN':'AVAILABLE'}
           </div>
-          ${isMine?`<div class="sc-hint">Tap to cancel</div>
+          ${isMine?`${statusBadge(status)}
+          ${status==='booked'?`<div style="margin-top:6px" onclick="event.stopPropagation()"><button class="btn-confirm" onclick="confirmAttendance('${s.id}')">✓ Confirm Attendance</button></div>`:''}
+          <div class="sc-hint">Tap to cancel</div>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
             <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,p.name)}" target="_blank" rel="noopener">📅 Google</a>
             <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,p.name)}" target="_blank" rel="noopener">📅 Outlook</a>
@@ -2021,7 +2511,8 @@ function renderBookingDayPanel(ds) {
 
 function renderBookingHeader() {
   const p = participants.find(x => x.id === currentPid); if (!p) return;
-  const remaining = p.sessionsAllocated - (p.bookedSlots?.length||0);
+  const bc = bookedCount(p);
+  const remaining = p.sessionsAllocated - bc;
   document.getElementById('bookingName').textContent = p.name;
   const g = getGroup(p.groupId);
   document.getElementById('bookingGroupChip').innerHTML = g
@@ -2032,28 +2523,33 @@ function renderBookingHeader() {
   document.getElementById('sessNum').textContent = remaining;
   document.getElementById('sessNum').style.color = remaining===0 ? 'var(--green)' : 'var(--purple)';
   document.getElementById('sessDots').innerHTML = Array.from({length: p.sessionsAllocated}).map((_,i) =>
-    `<div class="sess-dot${i<(p.bookedSlots?.length||0)?' on':''}"></div>`).join('');
+    `<div class="sess-dot${i<bc?' on':''}"></div>`).join('');
 }
 
 async function toggleBook(sId) {
   const p = participants.find(x => x.id === currentPid); if (!p) return;
-  const isMine    = p.bookedSlots?.includes(sId);
+  const isMine    = isBooked(p, sId);
   const b         = getBooker(sId);
-  const remaining = p.sessionsAllocated - (p.bookedSlots?.length||0);
+  const remaining = p.sessionsAllocated - bookedCount(p);
   if (!isMine && b)          { toast('Already taken', 'err'); return; }
   if (!isMine && remaining<=0){ toast('No sessions remaining', 'err'); return; }
   const newSlots = isMine
-    ? (p.bookedSlots||[]).filter(s => s!==sId)
-    : [...(p.bookedSlots||[]), sId];
+    ? removeSlotEntry(p.bookedSlots, sId)
+    : addSlotEntry(p.bookedSlots, sId);
   try {
     await db.collection('participants').doc(currentPid).update({ bookedSlots: newSlots });
     if (isMine) {
       toast('Booking cancelled');
     } else {
-      // Show confirmation overlay with calendar links
       const slot = bookingSlots.find(s => s.id === sId);
-      if (slot) showBookingConfirmation(slot, p.name);
-      else toast('Session booked! ✓');
+      if (slot) {
+        showBookingConfirmation(slot, p.name);
+        // Send email invite if configured
+        const sent = await sendEmailInvite(p, slot, false);
+        if (sent) toast('Invite sent ✓');
+      } else {
+        toast('Session booked! ✓');
+      }
       setTimeout(() => {
         const c = document.querySelector(`[data-slot="${sId}"]`);
         if (c) { c.classList.add('sc-flash'); setTimeout(()=>c.classList.remove('sc-flash'),500); }
@@ -2123,15 +2619,17 @@ async function enterCode() {
 // ══════════════════════════════════════════════════════
 function exportCSV() {
   const csvEsc = s => '"' + String(s||'').replace(/"/g,'""') + '"';
-  const rows = [['Date','Time','Duration (min)','Label','Group','Booked By','Email','Participant Code','Meeting Link']];
+  const rows = [['Date','Time','Duration (min)','Label','Group','Booked By','Email','Participant Code','Status','Notes','Meeting Link']];
   slots.forEach(s => {
     const g = getGroup(s.groupId);
     const b = getBooker(s.id);
+    const status = b ? (getSlotStatus(b, s.id) || 'booked') : '';
+    const notes = b ? getSlotNotes(b, s.id) : '';
     rows.push([
       s.date, fmtTime(s.time), s.duration||30, s.label||'',
       g ? g.name : (s.groupId==='all'?'All Groups':''),
       b ? b.name : '', b ? (b.email||'') : '', b ? b.id : '',
-      s.meetingLink||''
+      status, notes, s.meetingLink||''
     ]);
   });
   const csv = rows.map(r => r.map(csvEsc).join(',')).join('\n');
@@ -2144,8 +2642,25 @@ function exportCSV() {
   toast('CSV exported ✓');
 }
 
+function clearOverviewFilters() {
+  document.getElementById('ovFilterGroup').value = 'all';
+  document.getElementById('ovFilterStatus').value = 'all';
+  document.getElementById('ovFilterFrom').value = '';
+  document.getElementById('ovFilterTo').value = '';
+  renderOverview();
+}
+
+function populateOverviewGroupFilter() {
+  const el = document.getElementById('ovFilterGroup');
+  if (!el) return;
+  const val = el.value;
+  el.innerHTML = `<option value="all">All Groups</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  el.value = val || 'all';
+}
+
 function renderOverview() {
-  const total = participants.reduce((a,p) => a+(p.bookedSlots?.length||0), 0);
+  populateOverviewGroupFilter();
+  const total = participants.reduce((a,p) => a+bookedCount(p), 0);
   document.getElementById('statsGrid').innerHTML = [
     {l:'Groups',v:groups.length,c:'var(--cyan)'},
     {l:'Participants',v:participants.length,c:'var(--purple)'},
@@ -2153,11 +2668,30 @@ function renderOverview() {
     {l:'Booked',v:total,c:'var(--green)'},
   ].map(s=>`<div class="card stat-card"><div class="stat-n" style="color:${s.c}">${s.v}</div><div class="stat-l">${s.l}</div></div>`).join('');
 
+  const groupFilter = document.getElementById('ovFilterGroup')?.value || 'all';
+  const statusFilter = document.getElementById('ovFilterStatus')?.value || 'all';
+  const fromDate = document.getElementById('ovFilterFrom')?.value || '';
+  const toDate = document.getElementById('ovFilterTo')?.value || '';
+
   const oc = document.getElementById('overviewContent');
   if (!slots.length) { oc.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots yet.</div>`; return; }
 
-  let html = groups.map(g => {
-    const gSlots = slots.filter(s => s.groupId===g.id || s.groupId==='all');
+  const displayGroups = groupFilter === 'all' ? groups : groups.filter(g => g.id === groupFilter);
+
+  let html = displayGroups.map(g => {
+    let gSlots = slots.filter(s => s.groupId===g.id || s.groupId==='all');
+    // Apply date filters
+    if (fromDate) gSlots = gSlots.filter(s => s.date >= fromDate);
+    if (toDate) gSlots = gSlots.filter(s => s.date <= toDate);
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      gSlots = gSlots.filter(s => {
+        const b = getBooker(s.id);
+        if (!b) return false;
+        const st = getSlotStatus(b, s.id) || 'booked';
+        return st === statusFilter;
+      });
+    }
     if (!gSlots.length) return '';
     return `<div style="margin-bottom:30px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -2168,15 +2702,24 @@ function renderOverview() {
         <div class="date-heading">${fmtLong(d)}</div>
         <div class="ov-mini-grid">${slts.map(s=>{
           const b=getBooker(s.id);
+          const status = b ? (getSlotStatus(b, s.id) || 'booked') : null;
+          const notes = b ? getSlotNotes(b, s.id) : '';
           return `<div class="card ov-mini" style="background:${b?'var(--purple-dim)':'var(--glass)'};border-color:${b?'rgba(167,139,250,.25)':'var(--border)'}">
             <div class="ov-time">${fmtTime(s.time)}</div>
             ${s.label?`<div class="ov-lbl">${esc(s.label)}</div>`:''}
             <div class="ov-who" style="color:${b?'var(--purple)':'var(--green)'}">${b?esc(b.name):'Available'}</div>
+            ${b?statusBadge(status):''}
+            ${notes?`<div class="note-display">${esc(notes)}</div>`:''}
+            ${b?`<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+              <button class="btn-g btn-sm" style="font-size:8px;padding:2px 6px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓</button>
+              <button class="btn-g btn-sm" style="font-size:8px;padding:2px 6px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗</button>
+              ${status==='missed'?`<button class="btn-carry" style="font-size:8px;padding:2px 6px" onclick="carryForward('${b.id}','${s.id}')">↻</button>`:''}
+            </div>`:''}
           </div>`;
         }).join('')}</div>`).join('')}
     </div>`;
   }).join('');
-  oc.innerHTML = html || `<div class="empty"><div class="empty-icon">◇</div>No group data to show.</div>`;
+  oc.innerHTML = html || `<div class="empty"><div class="empty-icon">◇</div>No data matches the current filters.</div>`;
 }
 
 // ══════════════════════════════════════════════════════
@@ -2221,6 +2764,68 @@ function renderBadges() {
 //  INIT
 // ══════════════════════════════════════════════════════
 renderColorPalette();
+loadEmailJSSettings();
+
+// ══════════════════════════════════════════════════════
+//  PRE-SESSION REMINDERS (Feature 8)
+// ══════════════════════════════════════════════════════
+async function sendReminders(mode) {
+  if (!emailJSConfig.enabled || !emailJSConfig.remindersEnabled) {
+    toast('Enable EmailJS and reminders in Settings first', 'err');
+    return;
+  }
+  if (!emailJSConfig.publicKey || !emailJSConfig.serviceId || !emailJSConfig.templateId) {
+    toast('Complete EmailJS configuration in Settings first', 'err');
+    return;
+  }
+
+  const now = new Date();
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const slotsSource = mode === 'sup' ? supSlots : slots;
+  const participantsSource = mode === 'sup' && supGroupId
+    ? participants.filter(p => p.groupId === supGroupId)
+    : participants;
+
+  // Find booked sessions in the next 24 hours
+  const upcoming = [];
+  slotsSource.forEach(s => {
+    const { start } = slotToDateTimes(s);
+    if (start > now && start <= in24h) {
+      const b = getBooker(s.id);
+      if (b && b.email && participantsSource.find(p => p.id === b.id)) {
+        const status = getSlotStatus(b, s.id) || 'booked';
+        if (status === 'booked' || status === 'confirmed') {
+          upcoming.push({ slot: s, participant: b });
+        }
+      }
+    }
+  });
+
+  if (!upcoming.length) {
+    toast('No sessions with email in the next 24 hours');
+    return;
+  }
+
+  let sent = 0, failed = 0;
+  const names = [];
+
+  for (const { slot, participant } of upcoming) {
+    const ok = await sendEmailInvite(participant, slot, true);
+    if (ok) { sent++; names.push(participant.name); }
+    else { failed++; }
+  }
+
+  const nameList = [...new Set(names)].join(', ');
+  if (sent > 0) toast(`Reminders sent to: ${nameList} (${sent} total)`);
+  if (failed > 0) toast(`${failed} reminder(s) failed to send`, 'err');
+}
+
+// Load EmailJS settings when admin dashboard opens
+const origStartAdminListeners = startAdminListeners;
+startAdminListeners = function() {
+  origStartAdminListeners();
+  loadEmailJSSettings();
+};
 </script>
 </body>
 </html>
