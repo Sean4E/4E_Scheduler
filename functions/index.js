@@ -521,7 +521,7 @@ exports.sendWelcomeEmail = onRequest({ region: REGION }, async (req, res) => {
     const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
   <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 32px;display:flex;align-items:center;gap:16px">
     <img src="${logoUrl}" alt="4E" style="height:40px;width:auto" />
-    <h1 style="margin:0;font-size:22px;color:#fff">Welcome to 4E Workshops</h1>
+    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">Welcome to 4E Workshops</h1>
   </div>
   <div style="padding:24px 32px">
     <p style="font-size:16px;margin:0 0 8px">Hi <strong>${participantName}</strong>,</p>
