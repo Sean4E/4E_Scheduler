@@ -354,7 +354,7 @@ exports.onBookingChange = onDocumentWritten(
           const rawEmail = [
             `From: 4E Workshops <${organizerEmail}>`,
             `To: ${after.name} <${after.email}>`,
-            `Subject: ${eventTitle} — ${dateStr}`,
+            `Subject: =?UTF-8?B?${Buffer.from(eventTitle + " - " + dateStr).toString("base64")}?=`,
             "MIME-Version: 1.0",
             `Content-Type: multipart/mixed; boundary="${boundary}"`,
             "",
@@ -471,7 +471,7 @@ exports.onBookingChange = onDocumentWritten(
                 const cancelRaw = [
                   `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
                   `To: ${participantName} <${participantEmail}>`,
-                  `Subject: Session Cancelled — ${slot.label || "Workshop"} on ${dateStr}`,
+                  `Subject: =?UTF-8?B?${Buffer.from("Session Cancelled - " + (slot.label || "Workshop") + " on " + dateStr).toString("base64")}?=`,
                   "MIME-Version: 1.0",
                   "Content-Type: text/html; charset=UTF-8",
                   "",
@@ -499,11 +499,19 @@ exports.onBookingChange = onDocumentWritten(
 // ══════════════════════════════════════════════════════
 exports.sendWelcomeEmail = onRequest({ region: REGION }, async (req, res) => {
   if (!handleCors(req, res)) return;
-  const { participantName, participantEmail, participantCode, groupName, allowSelfService } = req.body;
+  const { participantId, participantName, participantEmail, participantCode, groupName, allowSelfService } = req.body;
 
   if (!participantEmail) { res.status(400).json({ error: "No email provided" }); return; }
 
   try {
+    // Look up participant code from Firestore if not provided
+    let code = participantCode;
+    if (!code && participantId) {
+      const pDoc = await db.collection("participants").doc(participantId).get();
+      if (pDoc.exists) code = pDoc.data().code || "";
+    }
+    code = code || "N/A";
+
     const authDoc = await db.collection("config").doc("googleAuth").get();
     if (!authDoc.exists || !authDoc.data().refreshToken) {
       res.status(400).json({ error: "Google Calendar not connected" }); return;
@@ -522,29 +530,33 @@ exports.sendWelcomeEmail = onRequest({ region: REGION }, async (req, res) => {
     <p style="color:#9d98be;margin:0 0 24px">You've been added to the 4E Workshop Scheduler${groupName ? " as part of <strong>" + groupName + "</strong>" : ""}.</p>
     <div style="background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.2);border-radius:10px;padding:20px;margin-bottom:20px;text-align:center">
       <div style="font-size:12px;color:#22d3ee;margin-bottom:8px;letter-spacing:2px">YOUR ACCESS CODE</div>
-      <div style="font-family:monospace;font-size:28px;letter-spacing:5px;font-weight:bold;margin-bottom:12px">${participantCode}</div>
+      <div style="font-family:monospace;font-size:28px;letter-spacing:5px;font-weight:bold;margin-bottom:12px">${code}</div>
       <a href="https://sean4e.github.io/4E_Scheduler/" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#22d3ee);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">Open Scheduler</a>
     </div>
     ${allowSelfService ? '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">You can use your code to view your sessions and change your booking times.</p>' : '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">Use your code to view your upcoming sessions and meeting details.</p>'}
-    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design · Workshop Scheduler</p>
+    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design . Workshop Scheduler</p>
   </div>
 </div>`;
+
+    // Use RFC 2047 encoded subject to handle special characters
+    const subjectText = "Welcome to 4E Workshops";
+    const encodedSubject = "=?UTF-8?B?" + Buffer.from(subjectText).toString("base64") + "?=";
 
     const rawEmail = [
       `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
       `To: ${participantName} <${participantEmail}>`,
-      `Subject: Welcome to 4E Workshops — Your Access Code`,
+      `Subject: ${encodedSubject}`,
       "MIME-Version: 1.0",
       "Content-Type: text/html; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
       "",
-      htmlBody,
+      Buffer.from(htmlBody).toString("base64"),
     ].join("\r\n");
 
-    const encoded = Buffer.from(rawEmail).toString("base64")
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const encoded = Buffer.from(rawEmail).toString("base64url");
 
     await gmail.users.messages.send({ userId: "me", requestBody: { raw: encoded } });
-    console.log("Welcome email sent to", participantEmail);
+    console.log("Welcome email sent to", participantEmail, "code:", code);
     res.json({ success: true });
   } catch (err) {
     console.error("Welcome email error:", err.message);
@@ -637,7 +649,7 @@ exports.sendReminders = onRequest({ region: REGION }, async (req, res) => {
         const rawEmail = [
           `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
           `To: ${p.name} <${p.email}>`,
-          `Subject: Reminder: ${eventTitle} tomorrow at ${timeStr}`,
+          `Subject: =?UTF-8?B?${Buffer.from("Reminder: " + eventTitle + " tomorrow at " + timeStr).toString("base64")}?=`,
           "MIME-Version: 1.0",
           "Content-Type: text/html; charset=UTF-8",
           "",
