@@ -589,8 +589,9 @@ input::placeholder{color:var(--text-dim)}
 
     <!-- CALENDAR / SLOTS -->
     <div id="pane-slots" style="display:none">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
-        <div class="card" style="padding:22px">
+      <div class="booking-layout">
+        <!-- LEFT: Calendar + slot creation -->
+        <div class="cal-col card" style="padding:22px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
             <div class="eyebrow" style="color:var(--orange)">SLOT CALENDAR</div>
             <div style="flex:1"></div>
@@ -602,7 +603,6 @@ input::placeholder{color:var(--text-dim)}
           <div id="adminDayPanel" style="display:none">
             <div class="divider"></div>
             <div id="adminDayTitle" class="eyebrow" style="color:var(--text-mid);margin-bottom:12px"></div>
-            <div id="adminDaySlots"></div>
             <div style="display:flex;gap:8px;margin-top:14px">
               <button class="btn-g btn-sm" style="flex:1" onclick="showSubForm('single')">+ Single Slot</button>
               <button class="btn-p btn-sm" style="flex:1" onclick="showSubForm('block')">⊞ Time Block</button>
@@ -699,9 +699,11 @@ input::placeholder{color:var(--text-dim)}
             </div>
           </div>
         </div>
-        <div class="card" style="padding:22px">
-          <div class="eyebrow" style="color:var(--text-mid);margin-bottom:14px">ALL SLOTS</div>
-          <div id="allSlotsList"></div>
+        <!-- RIGHT: Day's slot cards with assignment -->
+        <div>
+          <div id="adminDaySlots">
+            <div class="empty"><div class="empty-icon">↑</div>Pick a date to see slots and assign participants</div>
+          </div>
         </div>
       </div>
     </div>
@@ -881,8 +883,8 @@ input::placeholder{color:var(--text-dim)}
               <div style="font-size:14px;font-weight:700">Zoom Meetings</div>
               <div id="zoomStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Not connected</div>
             </div>
-            <button class="btn-p btn-sm" id="btnZoomConnect" onclick="connectZoom()">Activate</button>
-            <button class="btn-g btn-sm" id="btnZoomRefresh" onclick="connectZoom()" style="display:none">Refresh</button>
+            <button class="btn-p btn-sm" id="btnZoomConnect" onclick="connectZoom()">Connect</button>
+            <button class="btn-g btn-sm" id="btnZoomDisconnect" onclick="disconnectZoom()" style="display:none">Disconnect</button>
           </div>
           <div id="zoomSettings" style="display:none">
             <div class="toggle-wrap" onclick="toggleZoomWaitingRoom()" style="margin-bottom:10px">
@@ -1869,7 +1871,7 @@ function renderSupDayPanel(ds) {
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(supSlots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
         ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--orange)" onclick="supRescheduleSlot('${b.id}','${s.id}')">↻ Reschedule</button>
-        <button class="btn-rm" style="font-size:14px" onclick="supUnassignSlot('${b.id}','${s.id}')" title="Unassign">×</button>
+        <button class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;color:var(--red);border-color:rgba(248,113,113,.3)" onclick="supUnassignSlot('${b.id}','${s.id}')">Unassign</button>
       </div>
       <div onclick="event.stopPropagation()" style="margin-top:4px">
         <input class="note-input" placeholder="Add note…" value="${esc(notes)}" onchange="updateSlotNote('${b.id}','${s.id}',this.value)">
@@ -2651,7 +2653,7 @@ function renderAdminDayPanel(ds) {
   const el       = document.getElementById('adminDaySlots');
 
   if (!daySlots.length) {
-    el.innerHTML = `<div class="empty" style="padding:12px 0"><div class="empty-icon" style="font-size:16px">◇</div>No slots on this day.</div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon" style="font-size:16px">◇</div>No slots on this day. Use the controls on the left to add slots.</div>`;
     return;
   }
 
@@ -2708,7 +2710,7 @@ function renderAdminDayPanel(ds) {
         <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Outlook</a>
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(slots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
         ${link?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(link)}" target="_blank" rel="noopener">🔗 Join</a>`:''}
-        <button class="btn-rm" style="font-size:14px" onclick="adminUnassignSlot('${b.id}','${s.id}')" title="Unassign">×</button>
+        <button class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;color:var(--red);border-color:rgba(248,113,113,.3)" onclick="adminUnassignSlot('${b.id}','${s.id}')">Unassign</button>
       </div>
       <div onclick="event.stopPropagation()" style="margin-top:4px">
         <input class="note-input" placeholder="Add note…" value="${esc(notes)}" onchange="updateSlotNote('${b.id}','${s.id}',this.value)">
@@ -3300,7 +3302,7 @@ function pickGcalColor(id) {
 async function updateZoomStatusUI() {
   const zoomSt = document.getElementById('zoomStatus');
   const btnZC = document.getElementById('btnZoomConnect');
-  const btnZR = document.getElementById('btnZoomRefresh');
+  const btnZD = document.getElementById('btnZoomDisconnect');
   const zoomSet = document.getElementById('zoomSettings');
   try {
     const doc = await db.collection('config').doc('zoom').get();
@@ -3308,12 +3310,12 @@ async function updateZoomStatusUI() {
       const zEmail = doc.data().email || '';
       if (zoomSt) zoomSt.innerHTML = `<span style="color:var(--green)">Connected</span>${zEmail ? ` <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">${zEmail}</span>` : ''}`;
       if (btnZC) btnZC.style.display = 'none';
-      if (btnZR) btnZR.style.display = '';
+      if (btnZD) btnZD.style.display = '';
       if (zoomSet) zoomSet.style.display = 'block';
     } else {
       if (zoomSt) zoomSt.textContent = 'Not connected';
       if (btnZC) btnZC.style.display = '';
-      if (btnZR) btnZR.style.display = 'none';
+      if (btnZD) btnZD.style.display = 'none';
       if (zoomSet) zoomSet.style.display = 'none';
     }
   } catch(e) {
