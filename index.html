@@ -1294,10 +1294,7 @@ function populateWelcomeSelects() {
 }
 
 async function sendWelcomeEmails(mode) {
-  if (!isGcalConnected()) {
-    toast('Connect Google Calendar in Settings to send emails', 'err');
-    return;
-  }
+  // Cloud Function handles auth check — no need to block client-side
 
   let targets = [];
 
@@ -3418,11 +3415,6 @@ if ('serviceWorker' in navigator) {
 //  PRE-SESSION REMINDERS (Feature 8)
 // ══════════════════════════════════════════════════════
 async function sendReminders(mode) {
-  if (!isGcalConnected()) {
-    toast('Connect Google Calendar to send reminders', 'err');
-    return;
-  }
-
   toast('Sending reminders…');
   try {
     const resp = await fetch(FUNCTIONS_BASE + '/sendReminders', {
@@ -3763,14 +3755,22 @@ async function checkGcalServerStatus() {
     });
     const data = await resp.json();
     if (data.connected) {
-      if (st) st.innerHTML = '<span style="color:var(--green)">Connected</span> <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">' + esc(data.email || data.calendarId || '') + '</span>';
+      googleUserEmail = data.email || data.calendarId || 'Connected';
+      if (st) st.innerHTML = '<span style="color:var(--green)">Connected</span> <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">' + esc(googleUserEmail) + '</span>';
       if (btnC) btnC.style.display = 'none';
       if (btnD) btnD.style.display = '';
     } else {
+      googleUserEmail = null;
       if (st) st.innerHTML = '<span style="color:var(--orange)">Not connected</span>';
       if (btnC) btnC.style.display = '';
       if (btnD) btnD.style.display = 'none';
     }
+    // Update email notification status
+    updateEmailToggles({
+      autoSend: document.getElementById('autoEmailToggle')?.classList.contains('active') ?? true,
+      cancelNotify: document.getElementById('cancelEmailToggle')?.classList.contains('active') ?? true,
+      reminders: document.getElementById('reminderEmailToggle')?.classList.contains('active') ?? true,
+    });
   } catch(e) {
     if (st) st.innerHTML = '<span style="color:var(--red)">Cannot reach server</span>';
   }
