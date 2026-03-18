@@ -61,7 +61,7 @@
 <meta name="description" content="4E Workshop Scheduler — Book 1-to-1 sessions with ease">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apis.google.com/js/api.js" async defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -294,10 +294,10 @@ input::placeholder{color:var(--text-dim)}
 .toggle-track.on .toggle-thumb{left:20px}
 .toggle-label{font-size:13px;font-weight:600}
 
-/* emailjs settings */
-.emailjs-field{margin-bottom:10px}
-.emailjs-field label{font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px;display:block;margin-bottom:4px}
-.emailjs-field input{width:100%;font-size:12px;padding:8px 12px}
+/* settings field */
+.settings-field{margin-bottom:10px}
+.settings-field label{font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px;display:block;margin-bottom:4px}
+.settings-field input{width:100%;font-size:12px;padding:8px 12px}
 /* past slot styling */
 .sc-past{opacity:.5}
 .sc-past .sc-time{text-decoration:line-through}
@@ -810,35 +810,53 @@ input::placeholder{color:var(--text-dim)}
         <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Per-Group Supervisor PINs</h3>
         <p style="color:var(--text-mid);font-size:13px;margin-bottom:8px;line-height:1.6">Supervisor PINs are managed per group. Go to the <strong style="color:var(--cyan);cursor:pointer" onclick="switchTab('groups')">Groups</strong> tab to set or reset a supervisor PIN for each group.</p>
       </div>
-      <div class="card" style="padding:24px;max-width:440px;margin-bottom:20px">
-        <div class="eyebrow" style="color:var(--cyan);margin-bottom:16px">EMAIL INVITES (EMAILJS)</div>
-        <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">Automated Email Invites</h3>
-        <p style="color:var(--text-mid);font-size:13px;margin-bottom:16px;line-height:1.6">Send calendar invites via EmailJS when sessions are booked. Requires an <a href="https://www.emailjs.com/" target="_blank" rel="noopener" style="color:var(--cyan)">EmailJS</a> account.</p>
-        <div class="toggle-wrap" onclick="toggleEmailJS()" style="margin-bottom:16px">
-          <div class="toggle-track" id="emailjsToggle"><div class="toggle-thumb"></div></div>
-          <span class="toggle-label">Enable auto-invites</span>
+      <div class="card" style="padding:20px;margin-bottom:16px;max-width:440px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <span style="font-size:24px">📧</span>
+          <div>
+            <div style="font-weight:bold;font-size:15px">Email Notifications</div>
+            <div style="font-size:12px;color:var(--green)" id="emailStatus">Powered by Gmail</div>
+          </div>
         </div>
-        <div id="emailjsSettings" style="display:none">
-          <div class="emailjs-field">
-            <label>PUBLIC KEY (USER ID)</label>
-            <input type="text" id="ejsPublicKey" placeholder="e.g. user_aBcDeFgHiJkLmN" onchange="saveEmailJSSettings()">
+        <p style="color:var(--text-mid);font-size:13px;margin-bottom:16px;line-height:1.6">
+          Emails are sent automatically from your connected Google account when sessions are booked or cancelled.
+        </p>
+
+        <div class="toggle-wrap" onclick="toggleAutoEmails()" style="margin-bottom:12px">
+          <div class="toggle-track" id="autoEmailToggle"><div class="toggle-thumb"></div></div>
+          <span style="font-size:13px">Auto-send booking invites</span>
+        </div>
+
+        <div class="toggle-wrap" onclick="toggleCancelEmails()" style="margin-bottom:12px">
+          <div class="toggle-track" id="cancelEmailToggle"><div class="toggle-thumb"></div></div>
+          <span style="font-size:13px">Send cancellation notices</span>
+        </div>
+
+        <div class="toggle-wrap" onclick="toggleReminderEmails()" style="margin-bottom:16px">
+          <div class="toggle-track" id="reminderEmailToggle"><div class="toggle-thumb"></div></div>
+          <span style="font-size:13px">Send reminders (24hr before)</span>
+        </div>
+
+        <div style="border-top:1px solid rgba(255,255,255,.06);padding-top:16px;margin-top:8px">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px;margin-bottom:12px">SEND WELCOME EMAIL</div>
+          <p style="color:var(--text-mid);font-size:12px;margin-bottom:12px;line-height:1.5">
+            Send participants their scheduler link and PIN code so they can view or manage their bookings.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select id="welcomeGroupSelect" style="flex:1;min-width:140px;font-size:12px;padding:8px 12px">
+              <option value="">Select a group…</option>
+            </select>
+            <button class="btn-p btn-sm" onclick="sendWelcomeEmails('group')" style="white-space:nowrap">
+              📨 Send to Group
+            </button>
           </div>
-          <div class="emailjs-field">
-            <label>SERVICE ID</label>
-            <input type="text" id="ejsServiceId" placeholder="e.g. service_abc123" onchange="saveEmailJSSettings()">
-          </div>
-          <div class="emailjs-field">
-            <label>TEMPLATE ID (INVITE)</label>
-            <input type="text" id="ejsTemplateId" placeholder="e.g. template_xyz789" onchange="saveEmailJSSettings()">
-          </div>
-          <div class="divider"></div>
-          <div class="toggle-wrap" onclick="toggleReminders()" style="margin-bottom:12px">
-            <div class="toggle-track" id="reminderToggle"><div class="toggle-thumb"></div></div>
-            <span class="toggle-label">Enable reminders</span>
-          </div>
-          <div class="emailjs-field">
-            <label>REMINDER TEMPLATE ID <span style="font-size:8px;color:var(--text-dim)">(OPTIONAL — USES INVITE TEMPLATE IF BLANK)</span></label>
-            <input type="text" id="ejsReminderTemplateId" placeholder="e.g. template_reminder" onchange="saveEmailJSSettings()">
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+            <select id="welcomeParticipantSelect" style="flex:1;min-width:140px;font-size:12px;padding:8px 12px">
+              <option value="">Select a participant…</option>
+            </select>
+            <button class="btn-p btn-sm" onclick="sendWelcomeEmails('individual')" style="white-space:nowrap">
+              📨 Send to Individual
+            </button>
           </div>
         </div>
       </div>
@@ -863,15 +881,15 @@ input::placeholder{color:var(--text-dim)}
               <div class="toggle-track" id="gcalAutoToggle"><div class="toggle-thumb"></div></div>
               <span class="toggle-label" style="font-size:12px">Auto-create events on booking</span>
             </div>
-            <div class="emailjs-field">
+            <div class="settings-field">
               <label>EVENT COLOUR</label>
               <div class="color-palette" id="gcalColorPalette" style="margin-top:4px;margin-bottom:4px"></div>
             </div>
-            <div class="emailjs-field">
+            <div class="settings-field">
               <label>TITLE TEMPLATE</label>
               <input type="text" id="gcalTitleTemplate" placeholder="4E Workshop — {participant}" value="4E Workshop — {participant}" onchange="saveIntegrationSettings()">
             </div>
-            <div class="emailjs-field">
+            <div class="settings-field">
               <label>DESCRIPTION TEMPLATE</label>
               <input type="text" id="gcalDescTemplate" placeholder="{group} — {label}" value="{group} — {label}" onchange="saveIntegrationSettings()">
             </div>
@@ -931,7 +949,7 @@ input::placeholder{color:var(--text-dim)}
               <div class="toggle-track" id="zoomJoinBeforeHostToggle"><div class="toggle-thumb"></div></div>
               <span class="toggle-label" style="font-size:12px">Join before host</span>
             </div>
-            <div class="emailjs-field">
+            <div class="settings-field">
               <label>DEFAULT MEETING DURATION</label>
               <select id="zoomDefaultDuration" onchange="saveIntegrationSettings()" style="width:140px">
                 <option value="15">15 min</option>
@@ -1178,85 +1196,174 @@ function hideLockout() {
 }
 
 // ══════════════════════════════════════════════════════
-//  EMAILJS SETTINGS (Feature 3)
+//  EMAIL NOTIFICATION SETTINGS (Gmail API)
 // ══════════════════════════════════════════════════════
-let emailJSConfig = { enabled: false, remindersEnabled: false, publicKey: '', serviceId: '', templateId: '', reminderTemplateId: '' };
 
-async function loadEmailJSSettings() {
-  try {
-    const doc = await db.collection('config').doc('emailjs').get();
-    if (doc.exists) emailJSConfig = { ...emailJSConfig, ...doc.data() };
-    updateEmailJSUI();
-  } catch(e) { console.error('Error loading EmailJS settings:', e); }
+function isGcalConnected() {
+  return !!(googleUserEmail && googleUserEmail !== '');
 }
 
-function updateEmailJSUI() {
-  const toggle = document.getElementById('emailjsToggle');
-  const settings = document.getElementById('emailjsSettings');
-  const reminderToggle = document.getElementById('reminderToggle');
-  if (toggle) toggle.classList.toggle('on', emailJSConfig.enabled);
-  if (settings) settings.style.display = emailJSConfig.enabled ? 'block' : 'none';
-  if (reminderToggle) reminderToggle.classList.toggle('on', emailJSConfig.remindersEnabled);
-  const fields = { ejsPublicKey: 'publicKey', ejsServiceId: 'serviceId', ejsTemplateId: 'templateId', ejsReminderTemplateId: 'reminderTemplateId' };
-  Object.entries(fields).forEach(([elId, key]) => {
-    const el = document.getElementById(elId);
-    if (el && !el.matches(':focus')) el.value = emailJSConfig[key] || '';
-  });
-  // Show/hide reminder buttons
-  const show = emailJSConfig.enabled && emailJSConfig.remindersEnabled;
+async function loadEmailSettings() {
+  try {
+    const doc = await db.collection('config').doc('emailSettings').get();
+    const data = doc.exists ? doc.data() : { autoSend: true, cancelNotify: true, reminders: true };
+    updateEmailToggles(data);
+  } catch(e) { console.error('Error loading email settings:', e); }
+}
+
+function updateEmailToggles(data) {
+  const autoToggle = document.getElementById('autoEmailToggle');
+  const cancelToggle = document.getElementById('cancelEmailToggle');
+  const reminderToggle = document.getElementById('reminderEmailToggle');
+  if (autoToggle) autoToggle.classList.toggle('on', data.autoSend !== false);
+  if (cancelToggle) cancelToggle.classList.toggle('on', data.cancelNotify !== false);
+  if (reminderToggle) reminderToggle.classList.toggle('on', data.reminders !== false);
+
+  // Show/hide reminder buttons based on reminders toggle
+  const show = data.reminders !== false;
   const btn1 = document.getElementById('btnSendReminders');
   const btn2 = document.getElementById('btnSupSendReminders');
   if (btn1) btn1.style.display = show ? 'flex' : 'none';
   if (btn2) btn2.style.display = show ? 'flex' : 'none';
+
+  // Also update the email status indicator
+  const emailStatus = document.getElementById('emailStatus');
+  if (emailStatus) {
+    const connected = isGcalConnected();
+    emailStatus.textContent = connected ? 'Connected via Gmail' : 'Connect Google Calendar to enable';
+    emailStatus.style.color = connected ? 'var(--green)' : 'var(--text-mid)';
+  }
 }
 
-async function toggleEmailJS() {
-  emailJSConfig.enabled = !emailJSConfig.enabled;
-  await saveEmailJSSettings();
+async function toggleAutoEmails() {
+  const toggle = document.getElementById('autoEmailToggle');
+  toggle.classList.toggle('on');
+  await saveEmailSettings();
 }
 
-async function toggleReminders() {
-  emailJSConfig.remindersEnabled = !emailJSConfig.remindersEnabled;
-  await saveEmailJSSettings();
+async function toggleCancelEmails() {
+  const toggle = document.getElementById('cancelEmailToggle');
+  toggle.classList.toggle('on');
+  await saveEmailSettings();
 }
 
-async function saveEmailJSSettings() {
-  const fields = { ejsPublicKey: 'publicKey', ejsServiceId: 'serviceId', ejsTemplateId: 'templateId', ejsReminderTemplateId: 'reminderTemplateId' };
-  Object.entries(fields).forEach(([elId, key]) => {
-    const el = document.getElementById(elId);
-    if (el) emailJSConfig[key] = el.value.trim();
+async function toggleReminderEmails() {
+  const toggle = document.getElementById('reminderEmailToggle');
+  toggle.classList.toggle('on');
+  await saveEmailSettings();
+}
+
+async function saveEmailSettings() {
+  try {
+    const data = {
+      autoSend: document.getElementById('autoEmailToggle')?.classList.contains('on') ?? true,
+      cancelNotify: document.getElementById('cancelEmailToggle')?.classList.contains('on') ?? true,
+      reminders: document.getElementById('reminderEmailToggle')?.classList.contains('on') ?? true,
+    };
+    await db.collection('config').doc('emailSettings').set(data);
+    // Also update integrations config for the Cloud Function
+    try {
+      await db.collection('config').doc('integrations').update({ autoSendEmail: data.autoSend, cancelNotify: data.cancelNotify, sendReminders: data.reminders });
+    } catch(e) { /* integrations doc may not exist yet */ }
+    // Update reminder button visibility
+    const btn1 = document.getElementById('btnSendReminders');
+    const btn2 = document.getElementById('btnSupSendReminders');
+    if (btn1) btn1.style.display = data.reminders ? 'flex' : 'none';
+    if (btn2) btn2.style.display = data.reminders ? 'flex' : 'none';
+    toast('Email settings saved');
+  } catch(e) { toast('Error saving email settings', 'err'); }
+}
+
+function populateWelcomeSelects() {
+  const groupSel = document.getElementById('welcomeGroupSelect');
+  const partSel = document.getElementById('welcomeParticipantSelect');
+  if (!groupSel || !partSel) return;
+
+  // Populate groups
+  groupSel.innerHTML = '<option value="">Select a group…</option>';
+  groups.forEach(g => {
+    groupSel.innerHTML += `<option value="${g.id}">${esc(g.name)}</option>`;
   });
-  try {
-    await db.collection('config').doc('emailjs').set(emailJSConfig);
-    updateEmailJSUI();
-    toast('EmailJS settings saved ✓');
-  } catch(e) { toast('Error saving EmailJS settings', 'err'); }
+
+  // Populate participants (only those with email)
+  partSel.innerHTML = '<option value="">Select a participant…</option>';
+  participants.filter(p => p.email).forEach(p => {
+    const group = groups.find(g => g.id === p.groupId);
+    partSel.innerHTML += `<option value="${p.id}">${esc(p.name)}${group ? ' (' + esc(group.name) + ')' : ''}</option>`;
+  });
 }
 
-async function sendEmailInvite(participant, slot, isReminder) {
-  if (!emailJSConfig.enabled || !participant.email) return false;
-  if (!emailJSConfig.publicKey || !emailJSConfig.serviceId || !emailJSConfig.templateId) return false;
-  const { start, end, dur } = slotToDateTimes(slot);
-  const g = getGroup(slot.groupId);
-  const link = getMeetLink(slot);
-  const icsContent = generateICS(slot, participant.name);
-  const templateId = isReminder && emailJSConfig.reminderTemplateId ? emailJSConfig.reminderTemplateId : emailJSConfig.templateId;
+async function sendWelcomeEmails(mode) {
+  if (!isGcalConnected()) {
+    toast('Connect Google Calendar in Settings to send emails', 'err');
+    return;
+  }
+
+  let targets = [];
+
+  if (mode === 'group') {
+    const groupId = document.getElementById('welcomeGroupSelect').value;
+    if (!groupId) { toast('Select a group first', 'err'); return; }
+    targets = participants.filter(p => p.groupId === groupId && p.email);
+    if (!targets.length) { toast('No participants with email in this group', 'err'); return; }
+  } else {
+    const partId = document.getElementById('welcomeParticipantSelect').value;
+    if (!partId) { toast('Select a participant first', 'err'); return; }
+    const p = participants.find(x => x.id === partId);
+    if (!p || !p.email) { toast('Participant has no email address', 'err'); return; }
+    targets = [p];
+  }
+
+  if (!confirm(`Send welcome email to ${targets.length} participant${targets.length !== 1 ? 's' : ''}?`)) return;
+
+  toast(`Sending ${targets.length} welcome email${targets.length !== 1 ? 's' : ''}…`);
+
+  let sent = 0;
+  for (const p of targets) {
+    try {
+      const group = groups.find(g => g.id === p.groupId);
+      const resp = await fetch(FUNCTIONS_BASE + '/sendWelcomeEmail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          participantId: p.id,
+          participantName: p.name,
+          participantEmail: p.email,
+          participantCode: p.code,
+          groupName: group?.name || '',
+          allowSelfService: group?.allowSelfService || false,
+        }),
+      });
+      if (resp.ok) sent++;
+    } catch(e) { console.error('Welcome email error for', p.name, e); }
+  }
+
+  toast(`Sent ${sent}/${targets.length} welcome emails`);
+}
+
+async function supSendWelcome(participantId) {
+  const p = participants.find(x => x.id === participantId);
+  if (!p || !p.email) { toast('No email address for this participant', 'err'); return; }
+  if (!confirm(`Send welcome email to ${p.name}?`)) return;
+
+  const group = groups.find(g => g.id === p.groupId);
   try {
-    await emailjs.send(emailJSConfig.serviceId, templateId, {
-      to_email: participant.email,
-      to_name: participant.name,
-      session_date: fmtLong(slot.date),
-      session_time: fmtTime(slot.time),
-      session_duration: dur + ' minutes',
-      session_label: slot.label || '',
-      group_name: g ? g.name : '',
-      meeting_link: link || '',
-      ics_content: icsContent,
-      is_reminder: isReminder ? 'yes' : 'no',
-      subject: isReminder ? 'Reminder: 4E Workshop Session Tomorrow' : '4E Workshop Session Booked',
-    }, emailJSConfig.publicKey);
-    return true;
-  } catch(e) { console.error('EmailJS send error:', e); return false; }
+    toast('Sending…');
+    const resp = await fetch(FUNCTIONS_BASE + '/sendWelcomeEmail', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        participantId: p.id,
+        participantName: p.name,
+        participantEmail: p.email,
+        participantCode: p.code,
+        groupName: group?.name || '',
+        allowSelfService: group?.allowSelfService || false,
+      }),
+    });
+    if (resp.ok) toast(`Welcome email sent to ${p.name}`);
+    else toast('Failed to send', 'err');
+  } catch(e) { toast('Error sending email', 'err'); }
 }
 
 // ══════════════════════════════════════════════════════
@@ -1816,6 +1923,7 @@ function supParticipantRow(p, color) {
          </div>`
       : `<button class="btn-g btn-sm" onclick="supStartEdit('${p.id}')">Edit</button>`}
     <div class="code-pill" onclick="copyCode('${p.id}')" title="Click to copy">${p.id}</div>
+    ${p.email ? `<button onclick="supSendWelcome('${p.id}')" title="Send welcome email" style="background:none;border:none;cursor:pointer;font-size:14px;padding:4px">📨</button>` : ''}
     <button class="btn-rm" onclick="supRemoveParticipant('${p.id}')">×</button>
   </div>`;
 }
@@ -1951,12 +2059,7 @@ async function supQuickAssign(sid) {
     } else {
       toast(`Assigned to ${p.name} ✓`);
     }
-    // Send email invite if configured
-    const slot = supSlots.find(x => x.id === sid);
-    if (slot) {
-      const sent = await sendEmailInvite(p, slot, false);
-      if (sent) toast('Invite sent ✓');
-    }
+    // Email invite is sent automatically via Cloud Function on booking
   } catch(e) { toast('Error assigning slot', 'err'); }
 }
 
@@ -2244,6 +2347,7 @@ function startAdminListeners() {
     renderGroups();
     renderGroupSelects();
     renderBadges();
+    populateWelcomeSelects();
   }, err => console.error('groups listener:', err));
 
   unsubParticipants = db.collection('participants').orderBy('name').onSnapshot(snap => {
@@ -2251,6 +2355,7 @@ function startAdminListeners() {
     if (editingId) return; // don't wipe an active edit
     renderParticipants();
     renderBadges();
+    populateWelcomeSelects();
     // Re-render admin day panel so assignments show in realtime
     if (adminSelDate) renderAdminDayPanel(adminSelDate);
   }, err => console.error('participants listener:', err));
@@ -2278,7 +2383,7 @@ function renderAdminShell() {
   selectedColor = GROUP_COLORS[0];
   renderColorPalette();
   renderGroupSelects();
-  loadEmailJSSettings();
+  loadEmailSettings();
   switchTab('groups');
 }
 
@@ -2813,11 +2918,7 @@ async function adminQuickAssign(sid) {
       bookedSlots: addSlotEntry(p.bookedSlots, sid)
     });
     toast(`Assigned to ${p.name} ✓`);
-    const slot = slots.find(x => x.id === sid);
-    if (slot) {
-      const sent = await sendEmailInvite(p, slot, false);
-      if (sent) toast('Invite sent ✓');
-    }
+    // Email invite is sent automatically via Cloud Function on booking
   } catch(e) { toast('Error assigning slot', 'err'); }
 }
 
@@ -3087,9 +3188,7 @@ async function toggleBook(sId) {
       const slot = bookingSlots.find(s => s.id === sId);
       if (slot) {
         if (!wasRescheduling) showBookingConfirmation(slot, p.name);
-        // Send email invite if configured
-        const sent = await sendEmailInvite(p, slot, false);
-        if (sent) toast('Invite sent ✓');
+        // Email invite is sent automatically via Cloud Function on booking
       } else {
         toast('Session booked! ✓');
       }
@@ -3308,7 +3407,7 @@ function renderBadges() {
 //  INIT
 // ══════════════════════════════════════════════════════
 renderColorPalette();
-loadEmailJSSettings();
+loadEmailSettings();
 
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
@@ -3319,61 +3418,35 @@ if ('serviceWorker' in navigator) {
 //  PRE-SESSION REMINDERS (Feature 8)
 // ══════════════════════════════════════════════════════
 async function sendReminders(mode) {
-  if (!emailJSConfig.enabled || !emailJSConfig.remindersEnabled) {
-    toast('Enable EmailJS and reminders in Settings first', 'err');
-    return;
-  }
-  if (!emailJSConfig.publicKey || !emailJSConfig.serviceId || !emailJSConfig.templateId) {
-    toast('Complete EmailJS configuration in Settings first', 'err');
+  if (!isGcalConnected()) {
+    toast('Connect Google Calendar to send reminders', 'err');
     return;
   }
 
-  const now = new Date();
-  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const slotsSource = mode === 'sup' ? supSlots : slots;
-  const participantsSource = mode === 'sup' && supGroupId
-    ? participants.filter(p => p.groupId === supGroupId)
-    : participants;
-
-  // Find booked sessions in the next 24 hours
-  const upcoming = [];
-  slotsSource.forEach(s => {
-    const { start } = slotToDateTimes(s);
-    if (start > now && start <= in24h) {
-      const b = getBooker(s.id);
-      if (b && b.email && participantsSource.find(p => p.id === b.id)) {
-        const status = getSlotStatus(b, s.id) || 'booked';
-        if (status === 'booked' || status === 'confirmed') {
-          upcoming.push({ slot: s, participant: b });
-        }
-      }
+  toast('Sending reminders…');
+  try {
+    const resp = await fetch(FUNCTIONS_BASE + '/sendReminders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await resp.json();
+    if (data.sent > 0) {
+      toast(`Sent ${data.sent} reminder${data.sent !== 1 ? 's' : ''}`);
+    } else {
+      toast('No upcoming sessions to remind about');
     }
-  });
-
-  if (!upcoming.length) {
-    toast('No sessions with email in the next 24 hours');
-    return;
+  } catch(e) {
+    toast('Error sending reminders', 'err');
+    console.error('Reminder error:', e);
   }
-
-  let sent = 0, failed = 0;
-  const names = [];
-
-  for (const { slot, participant } of upcoming) {
-    const ok = await sendEmailInvite(participant, slot, true);
-    if (ok) { sent++; names.push(participant.name); }
-    else { failed++; }
-  }
-
-  const nameList = [...new Set(names)].join(', ');
-  if (sent > 0) toast(`Reminders sent to: ${nameList} (${sent} total)`);
-  if (failed > 0) toast(`${failed} reminder(s) failed to send`, 'err');
 }
 
-// Load EmailJS settings when admin dashboard opens
+// Load email settings and integrations when admin dashboard opens
 const origStartAdminListeners = startAdminListeners;
 startAdminListeners = function() {
   origStartAdminListeners();
-  loadEmailJSSettings();
+  loadEmailSettings();
   loadIntegrationSettings();
 };
 

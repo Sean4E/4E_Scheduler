@@ -495,6 +495,184 @@ exports.onBookingChange = onDocumentWritten(
 );
 
 // ══════════════════════════════════════════════════════
+//  SEND WELCOME EMAIL (Gmail API)
+// ══════════════════════════════════════════════════════
+exports.sendWelcomeEmail = onRequest({ region: REGION }, async (req, res) => {
+  if (!handleCors(req, res)) return;
+  const { participantName, participantEmail, participantCode, groupName, allowSelfService } = req.body;
+
+  if (!participantEmail) { res.status(400).json({ error: "No email provided" }); return; }
+
+  try {
+    const authDoc = await db.collection("config").doc("googleAuth").get();
+    if (!authDoc.exists || !authDoc.data().refreshToken) {
+      res.status(400).json({ error: "Google Calendar not connected" }); return;
+    }
+
+    const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+    oauth2.setCredentials({ refresh_token: authDoc.data().refreshToken });
+    const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+    const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
+  <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 32px">
+    <h1 style="margin:0;font-size:22px;color:#fff">Welcome to 4E Workshops</h1>
+  </div>
+  <div style="padding:24px 32px">
+    <p style="font-size:16px;margin:0 0 8px">Hi <strong>${participantName}</strong>,</p>
+    <p style="color:#9d98be;margin:0 0 24px">You've been added to the 4E Workshop Scheduler${groupName ? " as part of <strong>" + groupName + "</strong>" : ""}.</p>
+    <div style="background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.2);border-radius:10px;padding:20px;margin-bottom:20px;text-align:center">
+      <div style="font-size:12px;color:#22d3ee;margin-bottom:8px;letter-spacing:2px">YOUR ACCESS CODE</div>
+      <div style="font-family:monospace;font-size:28px;letter-spacing:5px;font-weight:bold;margin-bottom:12px">${participantCode}</div>
+      <a href="https://sean4e.github.io/4E_Scheduler/" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#22d3ee);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">Open Scheduler</a>
+    </div>
+    ${allowSelfService ? '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">You can use your code to view your sessions and change your booking times.</p>' : '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">Use your code to view your upcoming sessions and meeting details.</p>'}
+    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design · Workshop Scheduler</p>
+  </div>
+</div>`;
+
+    const rawEmail = [
+      `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
+      `To: ${participantName} <${participantEmail}>`,
+      `Subject: Welcome to 4E Workshops — Your Access Code`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/html; charset=UTF-8",
+      "",
+      htmlBody,
+    ].join("\r\n");
+
+    const encoded = Buffer.from(rawEmail).toString("base64")
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+    await gmail.users.messages.send({ userId: "me", requestBody: { raw: encoded } });
+    console.log("Welcome email sent to", participantEmail);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Welcome email error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════
+//  SEND REMINDERS (Gmail API — sessions in next 24hrs)
+// ══════════════════════════════════════════════════════
+exports.sendReminders = onRequest({ region: REGION }, async (req, res) => {
+  if (!handleCors(req, res)) return;
+
+  try {
+    const authDoc = await db.collection("config").doc("googleAuth").get();
+    if (!authDoc.exists || !authDoc.data().refreshToken) {
+      res.status(400).json({ error: "Google Calendar not connected" }); return;
+    }
+
+    const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+    oauth2.setCredentials({ refresh_token: authDoc.data().refreshToken });
+    const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+    // Find all sessions in the next 24-48 hours
+    const now = new Date();
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const dayAfter = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    const tomorrowDate = tomorrow.toISOString().split("T")[0];
+
+    // Get slots for tomorrow
+    const slotsSnap = await db.collection("slots").where("date", "==", tomorrowDate).get();
+    if (slotsSnap.empty) { res.json({ sent: 0, message: "No sessions tomorrow" }); return; }
+
+    const slotMap = {};
+    slotsSnap.forEach(d => { slotMap[d.id] = { id: d.id, ...d.data() }; });
+
+    // Get all participants
+    const partsSnap = await db.collection("participants").get();
+    let sent = 0;
+
+    for (const pDoc of partsSnap.docs) {
+      const p = pDoc.data();
+      if (!p.email || !p.bookedSlots?.length) continue;
+
+      for (const entry of p.bookedSlots) {
+        const slotId = typeof entry === "string" ? entry : entry.slotId;
+        const slot = slotMap[slotId];
+        if (!slot) continue;
+
+        // Skip if already reminded
+        if (typeof entry === "object" && entry.reminded) continue;
+
+        const [h, m] = slot.time.split(":").map(Number);
+        const sessionTime = new Date(slot.date + "T" + String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0") + ":00");
+        const dateStr = sessionTime.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Dublin" });
+        const timeStr = sessionTime.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Dublin" });
+        const dur = slot.duration || 30;
+        const meetLink = slot.meetingLink || "";
+
+        // Get group
+        let groupName = "";
+        if (slot.groupId && slot.groupId !== "all") {
+          const gDoc = await db.collection("groups").doc(slot.groupId).get();
+          if (gDoc.exists) groupName = gDoc.data().name || "";
+        }
+
+        const configDoc = await db.collection("config").doc("integrations").get();
+        const config = configDoc.exists ? configDoc.data() : {};
+        const titleTemplate = config.gcal?.titleTemplate || "4E Workshop — {participant}";
+        const eventTitle = titleTemplate.replace("{participant}", p.name).replace("{group}", groupName).replace("{label}", slot.label || "");
+
+        const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
+  <div style="background:linear-gradient(135deg,#fb923c,#f87171);padding:24px 32px">
+    <h1 style="margin:0;font-size:22px;color:#fff">Session Reminder</h1>
+  </div>
+  <div style="padding:24px 32px">
+    <p style="font-size:16px;margin:0 0 8px">Hi <strong>${p.name}</strong>,</p>
+    <p style="color:#9d98be;margin:0 0 24px">Your session is coming up tomorrow:</p>
+    <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:18px;margin-bottom:20px">
+      <div style="font-size:18px;font-weight:bold;margin-bottom:6px">${eventTitle}</div>
+      <div style="color:#a78bfa;font-size:14px;margin-bottom:4px">📅 ${dateStr}</div>
+      <div style="color:#22d3ee;font-size:14px;margin-bottom:4px">🕐 ${timeStr} · ${dur} min</div>
+      ${groupName ? `<div style="color:#9d98be;font-size:13px">📁 ${groupName}</div>` : ""}
+    </div>
+    ${meetLink ? `<a href="${meetLink}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#22d3ee);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">Join Meeting</a>` : ""}
+    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design · Workshop Scheduler</p>
+  </div>
+</div>`;
+
+        const rawEmail = [
+          `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
+          `To: ${p.name} <${p.email}>`,
+          `Subject: Reminder: ${eventTitle} tomorrow at ${timeStr}`,
+          "MIME-Version: 1.0",
+          "Content-Type: text/html; charset=UTF-8",
+          "",
+          htmlBody,
+        ].join("\r\n");
+
+        const encoded = Buffer.from(rawEmail).toString("base64")
+          .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+        await gmail.users.messages.send({ userId: "me", requestBody: { raw: encoded } });
+        console.log("Reminder sent to", p.email, "for slot", slotId);
+
+        // Mark as reminded
+        const updatedSlots = (p.bookedSlots || []).map(e => {
+          const id = typeof e === "string" ? e : e.slotId;
+          if (id === slotId) {
+            const obj = typeof e === "string" ? { slotId: e, status: "booked", notes: "" } : { ...e };
+            obj.reminded = true;
+            return obj;
+          }
+          return e;
+        });
+        await db.collection("participants").doc(pDoc.id).update({ bookedSlots: updatedSlots });
+        sent++;
+      }
+    }
+
+    res.json({ sent, message: `${sent} reminder${sent !== 1 ? "s" : ""} sent` });
+  } catch (err) {
+    console.error("Reminder error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════
 //  PIN VERIFICATION
 // ══════════════════════════════════════════════════════
 exports.verifyAdminPin = onRequest({ region: REGION }, async (req, res) => {
