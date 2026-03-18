@@ -504,13 +504,9 @@ exports.sendWelcomeEmail = onRequest({ region: REGION }, async (req, res) => {
   if (!participantEmail) { res.status(400).json({ error: "No email provided" }); return; }
 
   try {
-    // Look up participant code from Firestore if not provided
-    let code = participantCode;
-    if (!code && participantId) {
-      const pDoc = await db.collection("participants").doc(participantId).get();
-      if (pDoc.exists) code = pDoc.data().code || "";
-    }
-    code = code || "N/A";
+    // The participant's access code IS their document ID
+    // Client may send it as participantCode, or we use participantId as fallback
+    const code = participantCode || participantId || "N/A";
 
     const authDoc = await db.collection("config").doc("googleAuth").get();
     if (!authDoc.exists || !authDoc.data().refreshToken) {
@@ -521,8 +517,10 @@ exports.sendWelcomeEmail = onRequest({ region: REGION }, async (req, res) => {
     oauth2.setCredentials({ refresh_token: authDoc.data().refreshToken });
     const gmail = google.gmail({ version: "v1", auth: oauth2 });
 
+    const logoUrl = "https://sean4e.github.io/4E_Scheduler/logo_WHT.png";
     const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
-  <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 32px">
+  <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 32px;display:flex;align-items:center;gap:16px">
+    <img src="${logoUrl}" alt="4E" style="height:40px;width:auto" />
     <h1 style="margin:0;font-size:22px;color:#fff">Welcome to 4E Workshops</h1>
   </div>
   <div style="padding:24px 32px">

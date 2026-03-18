@@ -1326,7 +1326,7 @@ async function sendWelcomeEmails(mode) {
           participantId: p.id,
           participantName: p.name,
           participantEmail: p.email,
-          participantCode: p.code,
+          participantCode: p.id,
           groupName: group?.name || '',
           allowSelfService: group?.allowSelfService || false,
         }),
@@ -1353,7 +1353,7 @@ async function supSendWelcome(participantId) {
         participantId: p.id,
         participantName: p.name,
         participantEmail: p.email,
-        participantCode: p.code,
+        participantCode: p.id,
         groupName: group?.name || '',
         allowSelfService: group?.allowSelfService || false,
       }),
@@ -1361,6 +1361,34 @@ async function supSendWelcome(participantId) {
     if (resp.ok) toast(`Welcome email sent to ${p.name}`);
     else toast('Failed to send', 'err');
   } catch(e) { toast('Error sending email', 'err'); }
+}
+
+async function supWelcomeAll() {
+  const targets = participants.filter(p => p.groupId === supGroupId && p.email);
+  if (!targets.length) { toast('No participants with email addresses', 'err'); return; }
+  if (!confirm(`Send welcome email to ${targets.length} participant${targets.length !== 1 ? 's' : ''}?`)) return;
+
+  toast(`Sending ${targets.length} welcome email${targets.length !== 1 ? 's' : ''}…`);
+  let sent = 0;
+  for (const p of targets) {
+    try {
+      const group = groups.find(g => g.id === p.groupId);
+      const resp = await fetch(FUNCTIONS_BASE + '/sendWelcomeEmail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          participantId: p.id,
+          participantName: p.name,
+          participantEmail: p.email,
+          participantCode: p.id,
+          groupName: group?.name || '',
+          allowSelfService: group?.allowSelfService || false,
+        }),
+      });
+      if (resp.ok) sent++;
+    } catch(e) { console.error('Welcome email error for', p.name, e); }
+  }
+  toast(`Sent ${sent}/${targets.length} welcome emails`);
 }
 
 // ══════════════════════════════════════════════════════
@@ -1886,10 +1914,13 @@ function renderSupParticipants() {
   const color = g ? g.color : 'var(--text-dim)';
   let html = '';
   if (g) {
-    html += `<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px">
+    const withEmail = scopedParticipants.filter(p => p.email).length;
+    html += `<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px;flex-wrap:wrap">
       <div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>
       <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">${scopedParticipants.length} participant${scopedParticipants.length!==1?'s':''}</div>
-      <div style="flex:1;height:1px;background:var(--border)"></div></div>`;
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+      ${withEmail > 0 ? `<button class="btn-p btn-sm" onclick="supWelcomeAll()" style="font-size:11px;padding:5px 12px">📨 Welcome All (${withEmail})</button>` : ''}
+    </div>`;
   }
   html += scopedParticipants.map(p => supParticipantRow(p, color)).join('');
   el.innerHTML = html;
