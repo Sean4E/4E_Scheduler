@@ -24,7 +24,9 @@ const db = admin.firestore();
 const ZOOM_ACCOUNT_ID    = process.env.ZOOM_ACCOUNT_ID;
 const ZOOM_CLIENT_ID     = process.env.ZOOM_CLIENT_ID;
 const ZOOM_CLIENT_SECRET = process.env.ZOOM_CLIENT_SECRET;
-const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || "primary";
+const GOOGLE_CALENDAR_ID  = process.env.GOOGLE_CALENDAR_ID || "primary";
+const GOOGLE_CLIENT_ID    = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY;
 
 const ALLOWED_ORIGINS = [
@@ -71,35 +73,38 @@ function recordFail(ip) {
 function clearFails(ip) { attempts.delete(ip); }
 
 // ══════════════════════════════════════════════════════
-//  GOOGLE CALENDAR — Service Account (always-on)
+//  GOOGLE CALENDAR — Admin's OAuth2 (refresh token, always-on)
+//  Creates events AS the admin, can add attendees, Google sends invites
 // ══════════════════════════════════════════════════════
-let calendarClient = null;
 
-function getCalendar() {
-  if (calendarClient) return calendarClient;
-  const keyPath = path.join(__dirname, "service-account-key.json");
-  const auth = new google.auth.GoogleAuth({
-    keyFile: keyPath,
-    scopes: ["https://www.googleapis.com/auth/calendar"],
-  });
-  calendarClient = google.calendar({ version: "v3", auth });
-  return calendarClient;
+async function getCalendarAsAdmin() {
+  // Load stored refresh token from Firestore
+  const doc = await db.collection("config").doc("googleAuth").get();
+  if (!doc.exists || !doc.data().refreshToken) {
+    throw new Error("Google Calendar not connected — admin needs to connect in Settings");
+  }
+
+  const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+  oauth2Client.setCredentials({ refresh_token: doc.data().refreshToken });
+
+  return google.calendar({ version: "v3", auth: oauth2Client });
 }
 
 async function createCalendarEvent({ title, description, startTime, endTime, attendeeEmail, location, reminderMinutes, colorId, visibility, showAs }) {
   try {
-    const calendar = getCalendar();
+    const calendar = await getCalendarAsAdmin();
     const event = {
       summary: title,
-      description: (description || "") + (attendeeEmail ? "\n\nParticipant: " + attendeeEmail : ""),
+      description: description || "",
       start: { dateTime: startTime, timeZone: "Europe/Dublin" },
       end: { dateTime: endTime, timeZone: "Europe/Dublin" },
       reminders: { useDefault: false, overrides: [{ method: "popup", minutes: reminderMinutes || 30 }] },
     };
-    // Note: Service accounts on personal Gmail can't add attendees (requires Workspace)
-    // The event is created on admin's calendar. Participant gets notified via EmailJS or .ics download.
+    // Add participant as attendee — Google sends invite from admin's Gmail automatically
+    if (attendeeEmail) {
+      event.attendees = [{ email: attendeeEmail }];
+    }
     if (location) event.location = location;
-    // Apply optional calendar settings
     if (colorId) event.colorId = String(colorId);
     if (visibility && visibility !== "default") event.visibility = visibility;
     if (showAs) event.transparency = showAs === "free" ? "transparent" : "opaque";
@@ -107,7 +112,7 @@ async function createCalendarEvent({ title, description, startTime, endTime, att
     const res = await calendar.events.insert({
       calendarId: GOOGLE_CALENDAR_ID,
       resource: event,
-      sendUpdates: "none",
+      sendUpdates: attendeeEmail ? "all" : "none", // Google sends invite email
     });
     return { eventId: res.data.id, htmlLink: res.data.htmlLink };
   } catch (err) {
@@ -118,7 +123,7 @@ async function createCalendarEvent({ title, description, startTime, endTime, att
 
 async function deleteCalendarEvent(eventId) {
   try {
-    const calendar = getCalendar();
+    const calendar = await getCalendarAsAdmin();
     await calendar.events.delete({ calendarId: GOOGLE_CALENDAR_ID, eventId, sendUpdates: "all" });
     return true;
   } catch (err) {
@@ -499,14 +504,64 @@ exports.deleteMeeting = onRequest({ region: REGION }, async (req, res) => {
 });
 
 // ── Calendar status check ──
+// Google OAuth token exchange — admin connects once, we store refresh token
+exports.googleAuth = onRequest({ region: REGION }, async (req, res) => {
+  if (!handleCors(req, res)) return;
+  const { code, redirect_uri } = req.body;
+  if (!code) { res.status(400).json({ error: "Missing auth code" }); return; }
+
+  try {
+    // Use 'postmessage' for popup-based code flow
+    const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, "postmessage");
+    const { tokens } = await oauth2Client.getToken(code);
+
+    if (!tokens.refresh_token) {
+      res.status(400).json({ error: "No refresh token received. Try revoking access at myaccount.google.com/permissions and reconnecting." });
+      return;
+    }
+
+    // Get user email
+    oauth2Client.setCredentials(tokens);
+    const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
+    const userInfo = await oauth2.userinfo.get();
+
+    // Store refresh token securely in Firestore (only Cloud Functions can read this)
+    await db.collection("config").doc("googleAuth").set({
+      refreshToken: tokens.refresh_token,
+      email: userInfo.data.email,
+      connectedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    res.json({ success: true, email: userInfo.data.email });
+  } catch (err) {
+    console.error("Google OAuth error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 exports.checkCalendar = onRequest({ region: REGION }, async (req, res) => {
   if (!handleCors(req, res)) return;
   try {
-    const calendar = getCalendar();
-    // Use events.list instead of calendarList.get (works for shared calendars)
-    const r = await calendar.events.list({ calendarId: GOOGLE_CALENDAR_ID, maxResults: 1, timeMin: new Date().toISOString() });
-    res.json({ connected: true, calendarId: GOOGLE_CALENDAR_ID, email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL });
+    const doc = await db.collection("config").doc("googleAuth").get();
+    if (!doc.exists || !doc.data().refreshToken) {
+      res.json({ connected: false, hint: "Click Connect to sign in with Google" });
+      return;
+    }
+    // Verify token still works
+    const calendar = await getCalendarAsAdmin();
+    await calendar.events.list({ calendarId: GOOGLE_CALENDAR_ID, maxResults: 1, timeMin: new Date().toISOString() });
+    res.json({ connected: true, calendarId: GOOGLE_CALENDAR_ID, email: doc.data().email });
   } catch (err) {
-    res.status(500).json({ connected: false, error: err.message, hint: "Share your Google Calendar with: " + (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "the service account email") });
+    res.status(500).json({ connected: false, error: err.message, hint: "Reconnect Google Calendar in Settings" });
+  }
+});
+
+exports.disconnectCalendar = onRequest({ region: REGION }, async (req, res) => {
+  if (!handleCors(req, res)) return;
+  try {
+    await db.collection("config").doc("googleAuth").delete();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });

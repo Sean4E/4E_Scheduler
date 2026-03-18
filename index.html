@@ -829,7 +829,8 @@ input::placeholder{color:var(--text-dim)}
               <div style="font-size:14px;font-weight:700">Google Calendar</div>
               <div id="gcalStatus" style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:2px">Checking...</div>
             </div>
-            <button class="btn-g btn-sm" id="btnGcalRefresh" onclick="checkGcalServerStatus()">Refresh</button>
+            <button class="btn-p btn-sm" id="btnGcalConnect" onclick="connectGoogleCalendar()">Connect</button>
+            <button class="btn-g btn-sm" id="btnGcalDisconnect" onclick="disconnectGoogleCalendar()" style="display:none">Disconnect</button>
           </div>
           <div id="gcalSettings">
             <div class="toggle-wrap" onclick="toggleGcalAutoCreate()" style="margin-bottom:12px">
@@ -3451,9 +3452,11 @@ window.addEventListener('load', () => {
   tryGcalSilentReconnect();
 });
 
-// Check server-side Google Calendar status (service account)
+// Check server-side Google Calendar status
 async function checkGcalServerStatus() {
   const st = document.getElementById('gcalStatus');
+  const btnC = document.getElementById('btnGcalConnect');
+  const btnD = document.getElementById('btnGcalDisconnect');
   if (st) st.innerHTML = '<span style="color:var(--text-dim)">Checking…</span>';
   try {
     const resp = await fetch(FUNCTIONS_BASE + '/checkCalendar', {
@@ -3461,9 +3464,13 @@ async function checkGcalServerStatus() {
     });
     const data = await resp.json();
     if (data.connected) {
-      if (st) st.innerHTML = '<span style="color:var(--green)">Connected</span> <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">' + (data.calendarId || '') + '</span>';
+      if (st) st.innerHTML = '<span style="color:var(--green)">Connected</span> <span style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">' + esc(data.email || data.calendarId || '') + '</span>';
+      if (btnC) btnC.style.display = 'none';
+      if (btnD) btnD.style.display = '';
     } else {
-      if (st) st.innerHTML = '<span style="color:var(--red)">Not connected</span> <span style="font-size:9px;color:var(--text-dim)">Share calendar with service account</span>';
+      if (st) st.innerHTML = '<span style="color:var(--orange)">Not connected</span>';
+      if (btnC) btnC.style.display = '';
+      if (btnD) btnD.style.display = 'none';
     }
   } catch(e) {
     if (st) st.innerHTML = '<span style="color:var(--red)">Cannot reach server</span>';
@@ -3471,19 +3478,44 @@ async function checkGcalServerStatus() {
 }
 
 function connectGoogleCalendar() {
-  if (!gisInited || !gapiInited) {
-    // Retry init if scripts just loaded
-    if (typeof gapi !== 'undefined' && !gapiInited) initGapi();
-    if (typeof google !== 'undefined' && google.accounts && !gisInited) initGis();
-    if (!gisInited) { toast('Google scripts still loading — try again', 'err'); return; }
+  // Use authorization code flow to get a refresh token
+  if (typeof google === 'undefined' || !google.accounts) {
+    toast('Google scripts still loading — try again', 'err'); return;
   }
-  tokenClient.requestAccessToken({ prompt: 'consent' });
+  const client = google.accounts.oauth2.initCodeClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email',
+    ux_mode: 'popup',
+    callback: async (response) => {
+      if (response.error) { toast('Google sign-in failed: ' + response.error, 'err'); return; }
+      toast('Connecting Google Calendar…');
+      try {
+        const resp = await fetch(FUNCTIONS_BASE + '/googleAuth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: response.code, redirect_uri: window.location.origin }),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          toast('Google Calendar connected as ' + data.email + ' ✓');
+          checkGcalServerStatus();
+        } else {
+          toast('Failed: ' + (data.error || 'Unknown error'), 'err');
+        }
+      } catch(e) { toast('Error connecting to server', 'err'); }
+    },
+  });
+  client.requestCode();
 }
 
-function disconnectGoogleCalendar() {
-  if (googleAccessToken) {
-    google.accounts.oauth2.revoke(googleAccessToken, () => {});
-  }
+async function disconnectGoogleCalendar() {
+  try {
+    await fetch(FUNCTIONS_BASE + '/disconnectCalendar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    toast('Google Calendar disconnected');
+    checkGcalServerStatus();
+  } catch(e) { toast('Error disconnecting', 'err'); }
   googleAccessToken = null;
   googleUserEmail = null;
   gapi.client.setToken(null);
