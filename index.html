@@ -298,6 +298,17 @@ input::placeholder{color:var(--text-dim)}
 .emailjs-field{margin-bottom:10px}
 .emailjs-field label{font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px;display:block;margin-bottom:4px}
 .emailjs-field input{width:100%;font-size:12px;padding:8px 12px}
+/* past slot styling */
+.sc-past{opacity:.5}
+.sc-past .sc-time{text-decoration:line-through}
+.past-badge{font-family:var(--mono);font-size:8px;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--text-dim)}
+.cdot-dim{opacity:.4}
+/* admin past indicator */
+.asl-past-indicator{font-family:var(--mono);font-size:8px;letter-spacing:1px;color:var(--text-dim);padding:2px 6px;border-radius:4px;background:rgba(255,255,255,.04);border:1px solid var(--border)}
+/* participant note display in admin */
+.participant-note{font-family:var(--mono);font-size:10px;color:var(--cyan);margin-top:3px;font-style:italic;padding:2px 0}
+/* self-service info banner */
+.self-service-banner{background:var(--cyan-dim);border:1px solid rgba(34,211,238,.2);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--cyan);font-family:var(--syne)}
 </style>
 </head>
 <body>
@@ -553,6 +564,19 @@ input::placeholder{color:var(--text-dim)}
               <option value="individual">Individual meetings (unique per slot)</option>
               <option value="shared">Shared meeting (one link for all slots)</option>
             </select>
+          </div>
+        </div>
+        <div style="margin-bottom:14px">
+          <div class="eyebrow" style="color:var(--text-dim);margin-bottom:10px">MAX BOOKABLE SLOTS <span style="font-size:9px;letter-spacing:1px;color:var(--text-dim)">(OPTIONAL — 0 = UNLIMITED)</span></div>
+          <div class="form-row">
+            <input type="number" id="gMaxSlots" min="0" value="0" style="width:120px" placeholder="0">
+          </div>
+        </div>
+        <div style="margin-bottom:14px">
+          <div class="toggle-wrap" onclick="var cb=document.getElementById('gSelfService');cb.checked=!cb.checked;document.getElementById('gSelfServiceToggle').classList.toggle('on',cb.checked)">
+            <input type="checkbox" id="gSelfService" style="display:none">
+            <div class="toggle-track" id="gSelfServiceToggle"><div class="toggle-thumb"></div></div>
+            <span class="toggle-label">Allow participant self-service (reschedule)</span>
           </div>
         </div>
         <button class="btn-p" onclick="addGroup()">+ Create Group</button>
@@ -1428,11 +1452,17 @@ function showBookingConfirmation(slot, participantName) {
   const link = getMeetLink(slot);
   const dayStr = start.toLocaleDateString('en-IE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const timeStr = fmtTime(slot.time);
+  const selfService = g && g.allowSelfService;
   document.getElementById('confirmDetails').innerHTML =
     `<strong style="color:var(--text)">${dayStr}</strong><br>${timeStr} · ${dur} minutes` +
     (slot.label ? `<br><span style="color:var(--text-dim)">${esc(slot.label)}</span>` : '') +
     (g && g.id !== 'all' ? `<br><span style="color:${g.color}">${esc(g.name)}</span>` : '') +
-    (link ? `<br><a href="${esc(link)}" target="_blank" rel="noopener" style="color:var(--cyan);font-size:12px;font-family:var(--mono)">🔗 Join Meeting</a>` : '');
+    (link ? `<br><a href="${esc(link)}" target="_blank" rel="noopener" style="color:var(--cyan);font-size:12px;font-family:var(--mono)">🔗 Join Meeting</a>` : '') +
+    (selfService ? `<br><div style="margin-top:10px;padding:8px 12px;background:var(--cyan-dim);border:1px solid rgba(34,211,238,.2);border-radius:6px;font-size:11px;color:var(--cyan);text-align:left">
+      You can change your session time using this link:<br>
+      <a href="https://sean4e.github.io/4E_Scheduler/" target="_blank" rel="noopener" style="color:var(--cyan);font-family:var(--mono);font-size:10px">https://sean4e.github.io/4E_Scheduler/</a><br>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">Your code: <strong style="color:var(--cyan)">${esc(currentPid)}</strong></span>
+    </div>` : '');
   // Calendar buttons
   document.getElementById('confirmCalBtns').innerHTML =
     `<a class="btn-p btn-sm" style="text-decoration:none" href="${googleCalURL(slot,participantName)}" target="_blank" rel="noopener">📅 Google Calendar</a>
@@ -1712,6 +1742,13 @@ async function supAddParticipant() {
 }
 
 async function supRemoveParticipant(id) {
+  const p = participants.find(x => x.id === id);
+  const name = p ? p.name : id;
+  const bc = p ? bookedCount(p) : 0;
+  const msg = bc > 0
+    ? `Remove "${name}"? They have ${bc} active booking${bc!==1?'s':''} that will be cancelled.`
+    : `Remove "${name}"?`;
+  if (!confirm(msg)) return;
   try { await db.collection('participants').doc(id).delete(); toast('Removed'); }
   catch(e) { toast('Error removing participant', 'err'); }
 }
@@ -1852,16 +1889,20 @@ function renderSupDayPanel(ds) {
     const isTaken = !!b;
     const status = b ? getSlotStatus(b, s.id) : null;
     const notes = b ? getSlotNotes(b, s.id) : '';
+    const pNote = b ? getParticipantNote(b, s.id) : '';
+    const past = isSlotPast(s);
     let cls = 'sc';
     if (isTaken) cls += ' sc-mine';
-    return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}" ${!isTaken?`onclick="supQuickAssign('${s.id}')"`:''}>
-      <div class="sc-time">${fmtTime(s.time)}</div>
+    if (past) cls += ' sc-past';
+    return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}${past?';border-color:var(--border)':''}" ${!isTaken?`onclick="supQuickAssign('${s.id}')"`:''}>
+      <div class="sc-time">${fmtTime(s.time)}${past?' <span class="asl-past-indicator">PAST</span>':''}</div>
       ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
       ${getMeetLink(s)?'<div style="font-size:10px;color:var(--cyan);margin-bottom:4px">🔗 Meeting link</div>':''}
       <div class="sc-status" style="color:${isTaken?'var(--purple)':'var(--green)'}">
         ${isTaken?'● '+esc(b.name):'AVAILABLE'}
       </div>
       ${isTaken ? `<div style="margin-top:4px">${statusBadge(status)}</div>
+      ${pNote?`<div class="participant-note">📝 From participant: ${esc(pNote)}</div>`:''}
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓ Done</button>
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗ Missed</button>
@@ -1891,6 +1932,15 @@ async function supQuickAssign(sid) {
   if (rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
   if (isBooked(p, sid)) { toast('Already booked', 'err'); return; }
   if (getBooker(sid)) { toast('Slot already taken', 'err'); return; }
+  // Check group maxSlots cap
+  const assignSlot = supSlots.find(s => s.id === sid);
+  if (assignSlot && assignSlot.groupId && assignSlot.groupId !== 'all') {
+    const grp = getGroup(assignSlot.groupId);
+    if (grp && grp.maxSlots > 0) {
+      const groupBookings = countGroupBookings(assignSlot.groupId);
+      if (groupBookings >= grp.maxSlots) { toast('Group booking limit reached', 'err'); return; }
+    }
+  }
   try {
     await db.collection('participants').doc(supAssignPid).update({
       bookedSlots: addSlotEntry(p.bookedSlots, sid)
@@ -2120,7 +2170,7 @@ async function processCpPin() {
 // ══════════════════════════════════════════════════════
 //  UTILS
 // ══════════════════════════════════════════════════════
-const uid      = () => Math.random().toString(36).slice(2,9).toUpperCase();
+const uid      = () => { const arr = new Uint8Array(5); crypto.getRandomValues(arr); return Array.from(arr, b => b.toString(36).padStart(2, '0')).join('').substring(0, 7).toUpperCase(); };
 const todayStr = () => { const n=new Date(); return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`; };
 const pad      = n => String(n).padStart(2,'0');
 const fmtLong  = d => new Date(d+'T12:00').toLocaleDateString('en-IE',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
@@ -2130,6 +2180,21 @@ const fmtTime  = t  => { const[h,m]=t.split(':').map(Number); return `${h%12||12
 const esc      = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 const getBooker = sId => getBookerNew(sId);
 const getGroup  = id  => groups.find(g => g.id === id);
+function isSlotPast(slot) {
+  const [h,m] = slot.time.split(':').map(Number);
+  const d = slot.duration || 30;
+  const end = new Date(slot.date + 'T' + pad(h) + ':' + pad(m) + ':00');
+  end.setMinutes(end.getMinutes() + d);
+  return end < new Date();
+}
+function isDatePast(ds) {
+  const endOfDay = new Date(ds + 'T23:59:59');
+  return endOfDay < new Date();
+}
+function getParticipantNote(p, slotId) {
+  const entry = getSlotEntry(p, slotId);
+  return entry ? entry.participantNote || '' : '';
+}
 const groupByDate = arr => {
   const m={};
   arr.forEach(s=>{ if(!m[s.date])m[s.date]=[]; m[s.date].push(s); });
@@ -2233,8 +2298,10 @@ async function addGroup() {
   const meetLink = document.getElementById('gMeetLink').value.trim();
   const supPin = document.getElementById('gSupPin').value.trim();
   const meetMode = document.getElementById('gMeetMode').value || 'individual';
+  const maxSlots = parseInt(document.getElementById('gMaxSlots').value) || 0;
+  const allowSelfService = document.getElementById('gSelfService').checked;
   try {
-    const data = { name, color: selectedColor, meetMode };
+    const data = { name, color: selectedColor, meetMode, maxSlots, allowSelfService };
     if (meetLink) data.meetingLink = meetLink;
     if (supPin.length === 4) data.supervisorPinHash = await sha256(supPin);
     await db.collection('groups').doc(uid()).set(data);
@@ -2243,6 +2310,9 @@ async function addGroup() {
     document.getElementById('gMeetLink').value = '';
     document.getElementById('gSupPin').value = '';
     document.getElementById('gMeetMode').value = 'individual';
+    document.getElementById('gMaxSlots').value = '0';
+    document.getElementById('gSelfService').checked = false;
+    document.getElementById('gSelfServiceToggle').classList.remove('on');
   } catch(e) { toast('Error creating group', 'err'); }
 }
 
@@ -2262,13 +2332,40 @@ function getMeetLink(slot) {
   return g?.meetingLink || '';
 }
 
+let editingGroupId = null;
+
 async function removeGroup(id) {
   if (participants.some(p => p.groupId === id)) { toast('Remove participants from this group first', 'err'); return; }
   if (slots.some(s => s.groupId === id))        { toast('Remove slots for this group first', 'err'); return; }
+  const g = groups.find(x => x.id === id);
+  if (!confirm(`Remove group "${g ? g.name : id}"? This cannot be undone.`)) return;
   try {
     await db.collection('groups').doc(id).delete();
     toast('Group removed');
   } catch(e) { toast('Error removing group', 'err'); }
+}
+
+function startGroupEdit(id) { editingGroupId = id; renderGroups(); }
+function cancelGroupEdit() { editingGroupId = null; renderGroups(); }
+
+async function saveGroupEdit(id) {
+  const name = document.getElementById('geditName_'+id).value.trim();
+  const maxSlots = parseInt(document.getElementById('geditMaxSlots_'+id).value) || 0;
+  const meetMode = document.getElementById('geditMeetMode_'+id).value || 'individual';
+  const allowSelfService = document.getElementById('geditSelfService_'+id).checked;
+  if (!name) { toast('Group name is required', 'err'); return; }
+  // Read selected color from editing palette
+  const colorEl = document.querySelector('#geditColorPalette_'+id+' .picked');
+  const color = colorEl ? colorEl.dataset.color : groups.find(x=>x.id===id)?.color || '#22d3ee';
+  try {
+    await db.collection('groups').doc(id).update({ name, maxSlots, meetMode, allowSelfService, color });
+    editingGroupId = null;
+    toast('Group updated ✓');
+  } catch(e) { toast('Error saving group', 'err'); }
+}
+
+function countGroupBookings(groupId) {
+  return participants.filter(p => p.groupId === groupId).reduce((sum, p) => sum + bookedCount(p), 0);
 }
 
 function renderGroups() {
@@ -2281,17 +2378,67 @@ function renderGroups() {
   el.innerHTML = groups.map(g => {
     const pCount = participants.filter(p => p.groupId === g.id).length;
     const sCount = slots.filter(s => s.groupId === g.id).length;
+    const isEd = editingGroupId === g.id;
+    const bookedN = countGroupBookings(g.id);
+    const maxS = g.maxSlots || 0;
+    const maxSlotsDisplay = maxS > 0 ? `<span style="font-family:var(--mono);font-size:9px;color:var(--orange);letter-spacing:1px;padding:3px 8px;background:var(--orange-dim);border-radius:6px;border:1px solid rgba(251,146,60,.2)">${bookedN} / ${maxS} booked</span>` : '';
+    const selfServiceBadge = g.allowSelfService ? `<span style="font-family:var(--mono);font-size:9px;color:var(--cyan);letter-spacing:1px;padding:3px 8px;background:var(--cyan-dim);border-radius:6px;border:1px solid rgba(34,211,238,.2)">SELF-SERVICE</span>` : '';
+    const progressBar = maxS > 0 ? `<div style="margin-top:6px;display:flex;align-items:center;gap:8px"><div style="flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:linear-gradient(90deg,var(--orange),var(--cyan));width:${Math.min(100,(bookedN/maxS)*100)}%"></div></div><span style="font-family:var(--mono);font-size:9px;color:var(--text-mid)">${Math.round((bookedN/maxS)*100)}%</span></div>` : '';
+
+    if (isEd) {
+      return `<div class="card" style="padding:16px 18px;margin-bottom:8px;border-color:var(--purple)">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="form-row" style="align-items:center">
+            <div class="inline-field" style="flex:1;min-width:160px">
+              <label>GROUP NAME</label>
+              <input type="text" id="geditName_${g.id}" value="${esc(g.name)}" placeholder="Group name">
+            </div>
+            <div class="inline-field" style="min-width:130px">
+              <label>MEETING MODE</label>
+              <select id="geditMeetMode_${g.id}" style="width:200px">
+                <option value="individual" ${g.meetMode!=='shared'?'selected':''}>Individual meetings</option>
+                <option value="shared" ${g.meetMode==='shared'?'selected':''}>Shared meeting</option>
+              </select>
+            </div>
+            <div class="inline-field">
+              <label>MAX SLOTS</label>
+              <input type="number" id="geditMaxSlots_${g.id}" min="0" value="${g.maxSlots||0}" style="width:80px">
+            </div>
+          </div>
+          <div>
+            <div class="eyebrow" style="color:var(--text-dim);margin-bottom:8px">GROUP COLOUR</div>
+            <div class="color-palette" id="geditColorPalette_${g.id}">
+              ${GROUP_COLORS.map(c => `<div class="color-swatch${c===g.color?' picked':''}" style="background:${c}" data-color="${c}" onclick="this.parentNode.querySelectorAll('.color-swatch').forEach(x=>x.classList.remove('picked'));this.classList.add('picked')"></div>`).join('')}
+            </div>
+          </div>
+          <div class="toggle-wrap" onclick="var cb=document.getElementById('geditSelfService_${g.id}');cb.checked=!cb.checked;this.querySelector('.toggle-track').classList.toggle('on',cb.checked)">
+            <input type="checkbox" id="geditSelfService_${g.id}" ${g.allowSelfService?'checked':''} style="display:none">
+            <div class="toggle-track${g.allowSelfService?' on':''}"><div class="toggle-thumb"></div></div>
+            <span class="toggle-label" style="font-size:12px">Allow participant self-service</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-p btn-sm" onclick="saveGroupEdit('${g.id}')">Save</button>
+            <button class="btn-g btn-sm" onclick="cancelGroupEdit()">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+    }
+
     return `<div class="card" style="padding:16px 18px;margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div style="width:38px;height:38px;border-radius:50%;background:${g.color};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#000">${esc(g.name[0].toUpperCase())}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:700;margin-bottom:3px">${esc(g.name)}</div>
           <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">${pCount} participant${pCount!==1?'s':''} &nbsp;·&nbsp; ${sCount} slot${sCount!==1?'s':''}</div>
+          ${progressBar}
         </div>
+        ${maxSlotsDisplay}
+        ${selfServiceBadge}
         <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:1px;padding:3px 8px;background:var(--glass);border-radius:6px;border:1px solid var(--border)">${g.meetMode==='shared'?'SHARED MEETING':'INDIVIDUAL'}</span>
         ${g.supervisorPinHash
           ? `<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px;padding:3px 8px;background:var(--green-dim);border-radius:6px;border:1px solid rgba(52,211,153,.2);cursor:pointer" onclick="resetGroupSupPin('${g.id}')" title="Click to reset">🔑 SUPERVISOR</span>`
           : `<button class="btn-g btn-sm" style="font-size:10px;padding:4px 10px" onclick="setGroupSupPin('${g.id}')">+ Supervisor</button>`}
+        <button class="btn-g btn-sm" onclick="startGroupEdit('${g.id}')">Edit</button>
         <button class="btn-rm" onclick="removeGroup('${g.id}')">×</button>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
@@ -2335,6 +2482,13 @@ async function addParticipant() {
 }
 
 async function removeParticipant(id) {
+  const p = participants.find(x => x.id === id);
+  const name = p ? p.name : id;
+  const bc = p ? bookedCount(p) : 0;
+  const msg = bc > 0
+    ? `Remove "${name}"? They have ${bc} active booking${bc!==1?'s':''} that will be cancelled.`
+    : `Remove "${name}"?`;
+  if (!confirm(msg)) return;
   try { await db.collection('participants').doc(id).delete(); toast('Removed'); }
   catch(e) { toast('Error removing participant', 'err'); }
 }
@@ -2450,6 +2604,14 @@ async function addSingleSlot() {
   if (slots.find(s => s.date===adminSelDate && s.time===time && s.groupId===groupId)) { toast('Slot already exists', 'err'); return; }
   const overlap = checkOverlap(adminSelDate, time, dur, groupId);
   if (overlap && !confirm(`⚠ This time overlaps with: ${overlap}\n\nThis could cause a double-booking if you're the only trainer. Continue anyway?`)) return;
+  // maxSlots warning
+  if (groupId && groupId !== 'all') {
+    const grp = getGroup(groupId);
+    if (grp && grp.maxSlots > 0) {
+      const existingSlots = slots.filter(s => s.groupId === groupId).length;
+      if (existingSlots + 1 > grp.maxSlots && !confirm(`Warning: Adding this slot will exceed the max bookable slots cap (${grp.maxSlots}) for "${grp.name}". Continue?`)) return;
+    }
+  }
   const data = { date: adminSelDate, time, duration: dur, label, groupId };
   if (meetLink) data.meetingLink = meetLink;
   try {
@@ -2497,6 +2659,14 @@ async function addBlock() {
   if (!start || !end) { toast('Set start and end times', 'err'); return; }
   const times = generateBlockSlots(start, end, dur, brk);
   if (!times.length) { toast('No slots fit in this range', 'err'); return; }
+  // maxSlots warning for block
+  if (groupId && groupId !== 'all') {
+    const grp = getGroup(groupId);
+    if (grp && grp.maxSlots > 0) {
+      const existingSlots = slots.filter(s => s.groupId === groupId).length;
+      if (existingSlots + times.length > grp.maxSlots && !confirm(`Warning: Adding ${times.length} slots will exceed the max bookable slots cap (${grp.maxSlots}) for "${grp.name}". Continue?`)) return;
+    }
+  }
   // Check for overlaps across groups
   const overlapping = times.map(t => checkOverlap(adminSelDate, t, dur, groupId)).filter(Boolean);
   if (overlapping.length) {
@@ -2530,6 +2700,13 @@ async function updateSlotMeetLink(slotId, link) {
 }
 
 async function removeSlot(id) {
+  const slot = slots.find(s => s.id === id) || supSlots.find(s => s.id === id);
+  const booker = getBooker(id);
+  let msg = 'Remove this slot';
+  if (slot) msg += ` (${fmtTime(slot.time)} on ${slot.date})`;
+  if (booker) msg += `? It is booked by ${booker.name}`;
+  else msg += '?';
+  if (!confirm(msg)) return;
   try {
     const batch = db.batch();
     batch.delete(db.collection('slots').doc(id));
@@ -2622,6 +2799,15 @@ async function adminQuickAssign(sid) {
   if (rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
   if (isBooked(p, sid)) { toast('Already booked', 'err'); return; }
   if (getBooker(sid)) { toast('Slot already taken', 'err'); return; }
+  // Check group maxSlots cap
+  const assignSlot = slots.find(s => s.id === sid);
+  if (assignSlot && assignSlot.groupId && assignSlot.groupId !== 'all') {
+    const grp = getGroup(assignSlot.groupId);
+    if (grp && grp.maxSlots > 0) {
+      const groupBookings = countGroupBookings(assignSlot.groupId);
+      if (groupBookings >= grp.maxSlots) { toast('Group booking limit reached', 'err'); return; }
+    }
+  }
   try {
     await db.collection('participants').doc(adminAssignPid).update({
       bookedSlots: addSlotEntry(p.bookedSlots, sid)
@@ -2691,10 +2877,13 @@ function renderAdminDayPanel(ds) {
     const isTaken = !!b;
     const status = b ? (getSlotStatus(b, s.id) || 'booked') : null;
     const notes = b ? getSlotNotes(b, s.id) : '';
+    const pNote = b ? getParticipantNote(b, s.id) : '';
+    const past = isSlotPast(s);
     let cls = 'sc';
     if (isTaken) cls += ' sc-mine';
-    return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}" ${!isTaken?`onclick="adminQuickAssign('${s.id}')"`:''}>
-      <div class="sc-time">${fmtTime(s.time)}</div>
+    if (past) cls += ' sc-past';
+    return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}${past?';border-color:var(--border)':''}" ${!isTaken?`onclick="adminQuickAssign('${s.id}')"`:''}>
+      <div class="sc-time">${fmtTime(s.time)}${past?' <span class="asl-past-indicator">PAST</span>':''}</div>
       ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
       ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;margin-bottom:4px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
       ${link?'<div style="font-size:10px;color:var(--cyan);margin-bottom:4px">🔗 Meeting link</div>':''}
@@ -2702,6 +2891,7 @@ function renderAdminDayPanel(ds) {
         ${isTaken?'● '+esc(b.name):'AVAILABLE'}
       </div>
       ${isTaken ? `<div style="margin-top:4px">${statusBadge(status)}</div>
+      ${pNote?`<div class="participant-note">📝 From participant: ${esc(pNote)}</div>`:''}
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓ Done</button>
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗ Missed</button>
@@ -2757,10 +2947,11 @@ function bookingNext() { bookingCalDate = new Date(bookingCalDate.getFullYear(),
 
 function bookingDotsFn(ds) {
   const p = participants.find(x => x.id === currentPid); if (!p) return [];
+  const past = isDatePast(ds);
   return bookingSlots.filter(s => s.date===ds).map(s => {
-    if (isBooked(p, s.id)) return 'var(--purple)';
+    if (isBooked(p, s.id)) return past ? 'rgba(167,139,250,.4)' : 'var(--purple)';
     if (getBooker(s.id)) return 'var(--text-dim)';
-    return 'var(--green)';
+    return past ? 'rgba(52,211,153,.35)' : 'var(--green)';
   });
 }
 
@@ -2773,17 +2964,32 @@ function bookingDayClick(ds) {
   renderBookingDayPanel(ds);
 }
 
+async function updateParticipantNote(sid, note) {
+  const p = participants.find(x => x.id === currentPid);
+  if (!p) return;
+  try {
+    await db.collection('participants').doc(currentPid).update({
+      bookedSlots: updateSlotEntry(p.bookedSlots, sid, { participantNote: note })
+    });
+  } catch(e) { toast('Error saving note', 'err'); }
+}
+
 function renderBookingDayPanel(ds) {
   const p       = participants.find(x => x.id === currentPid); if (!p) return;
   const remaining = p.sessionsAllocated - bookedCount(p);
   const daySlots  = bookingSlots.filter(s => s.date===ds);
   const el = document.getElementById('bookingDayPanel');
   if (!daySlots.length) { el.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots on this day.</div>`; return; }
+  // Check if group has self-service enabled
+  const grp = p.groupId ? getGroup(p.groupId) : null;
+  const selfService = grp && grp.allowSelfService;
+  const selfServiceBanner = selfService ? `<div class="self-service-banner">You can change your session time by clicking Reschedule on your booked slot</div>` : '';
   el.innerHTML = `
     <div style="margin-bottom:14px">
       <div class="eyebrow" style="color:var(--text-mid);margin-bottom:3px">${fmtShort(ds)}</div>
       <div style="font-size:13px;color:var(--text-mid)">${fmtLong(ds)}</div>
     </div>
+    ${selfServiceBanner}
     <div class="time-slots">
       ${daySlots.map(s => {
         const isMine  = isBooked(p, s.id);
@@ -2791,18 +2997,21 @@ function renderBookingDayPanel(ds) {
         const isTaken = b && !isMine;
         const canBook = !isTaken && (isMine || remaining>0);
         const status  = isMine ? (getSlotStatus(p, s.id) || 'booked') : null;
+        const past    = isSlotPast(s);
+        const pNote   = isMine ? getParticipantNote(p, s.id) : '';
         let cls = 'sc';
         if (isMine)  cls += ' sc-mine';
         if (isTaken) cls += ' sc-taken';
         if (!canBook && !isMine) cls += ' sc-nomore';
+        if (past) cls += ' sc-past';
         return `<div class="${cls}" data-slot="${s.id}" onclick="toggleBook('${s.id}')">
-          <div class="sc-time">${fmtTime(s.time)}</div>
+          <div class="sc-time">${fmtTime(s.time)}${past?' <span class="past-badge">PAST</span>':''}</div>
           ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
           <div class="sc-status" style="color:${isMine?'var(--purple)':isTaken?'var(--text-dim)':'var(--green)'}">
             ${isMine?'● BOOKED':isTaken?'TAKEN':'AVAILABLE'}
           </div>
           ${isMine?`${statusBadge(status)}
-          ${status==='booked'?`<div style="margin-top:6px" onclick="event.stopPropagation()"><button class="btn-confirm" onclick="confirmAttendance('${s.id}')">✓ Confirm Attendance</button></div>`:''}
+          ${status==='booked' && !past?`<div style="margin-top:6px" onclick="event.stopPropagation()"><button class="btn-confirm" onclick="confirmAttendance('${s.id}')">✓ Confirm Attendance</button></div>`:''}
           <div class="sc-hint">Tap to cancel</div>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
             <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,p.name)}" target="_blank" rel="noopener">📅 Google</a>
@@ -2810,6 +3019,10 @@ function renderBookingDayPanel(ds) {
             <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(bookingSlots.find(x=>x.id==='${s.id}'),'${esc(p.name)}')">📅 .ics</button>
             ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
             <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--orange)" onclick="participantReschedule('${s.id}')">↻ Reschedule</button>
+          </div>
+          <div onclick="event.stopPropagation()" style="margin-top:6px">
+            <input class="note-input" placeholder="e.g. topics you'd like to cover" value="${esc(pNote)}" onblur="updateParticipantNote('${s.id}',this.value)" style="font-size:10px">
+            <div style="font-family:var(--mono);font-size:8px;color:var(--text-dim);margin-top:2px">Add a note for your trainer (optional)</div>
           </div>`:''}
         </div>`;
       }).join('')}
@@ -2840,6 +3053,17 @@ async function toggleBook(sId) {
   const remaining = p.sessionsAllocated - bookedCount(p);
   if (!isMine && b)          { toast('Already taken', 'err'); return; }
   if (!isMine && remaining<=0){ toast('No sessions remaining', 'err'); return; }
+  // Check group maxSlots cap on new bookings
+  if (!isMine) {
+    const slot = bookingSlots.find(s => s.id === sId);
+    if (slot && slot.groupId && slot.groupId !== 'all') {
+      const grp = getGroup(slot.groupId);
+      if (grp && grp.maxSlots > 0) {
+        const groupBookings = countGroupBookings(slot.groupId);
+        if (groupBookings >= grp.maxSlots) { toast('Group booking limit reached', 'err'); return; }
+      }
+    }
+  }
   if (isMine && !participantRescheduling && !confirm('Cancel this booking?')) return;
   // Capture calendar event ID before removing (for deletion)
   const cancelledEntry = isMine ? getSlotEntry(p, sId) : null;

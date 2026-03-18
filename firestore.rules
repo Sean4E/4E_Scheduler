@@ -2,9 +2,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // CONFIG — admin PIN hash is NEVER readable by clients
+    // CONFIG — admin PIN hash and googleAuth are NEVER readable by clients
     // PIN verification happens server-side via Cloud Functions
+    // Google OAuth refresh token is stored server-side only
     match /config/admin {
+      allow read: if false;
+      allow write: if false;
+      // Only Cloud Functions (admin SDK) can read/write this
+    }
+
+    match /config/googleAuth {
       allow read: if false;
       allow write: if false;
       // Only Cloud Functions (admin SDK) can read/write this
@@ -12,8 +19,8 @@ service cloud.firestore {
 
     // Other config (emailjs, integrations, zoom) — read/write for app use
     match /config/{doc} {
-      allow read: if doc != 'admin';
-      allow write: if doc != 'admin';
+      allow read: if doc != 'admin' && doc != 'googleAuth';
+      allow write: if doc != 'admin' && doc != 'googleAuth';
     }
 
     // SESSIONS — server-issued tokens, read-only by clients
