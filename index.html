@@ -3594,7 +3594,7 @@ let gcalPreviouslyConnected = false; // true if was connected in a previous sess
 function initGis() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email',
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.send',
     callback: (resp) => {
       if (resp.error) {
         if (gcalSilentReconnect) {
@@ -3710,7 +3710,7 @@ function connectGoogleCalendar() {
   }
   const client = google.accounts.oauth2.initCodeClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email',
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.send',
     ux_mode: 'popup',
     callback: async (response) => {
       if (response.error) { toast('Google sign-in failed: ' + response.error, 'err'); return; }

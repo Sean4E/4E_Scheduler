@@ -289,98 +289,140 @@ exports.onBookingChange = onDocumentWritten(
         }
       }
 
-      // Send email invite via EmailJS if enabled
-      if (config.autoSendEmail && after.email) {
+      // Send email invite via Gmail API (from admin's Gmail, with .ics attachment)
+      if (after.email) {
         try {
-          const ejsDoc = await db.collection("config").doc("emailjs").get();
-          const ejs = ejsDoc.exists ? ejsDoc.data() : {};
-          if (ejs.enabled && ejs.serviceId && ejs.templateId && ejs.publicKey) {
-            // Format date and time for email
-            const dateStr = start.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Dublin" });
-            const timeStr = start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Dublin" });
+          const dateStr = start.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Dublin" });
+          const timeStr = start.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Dublin" });
+          const titleTemplate = config.gcal?.titleTemplate || "4E Workshop — {participant}";
+          const eventTitle = titleTemplate.replace("{participant}", after.name).replace("{group}", group?.name || "").replace("{label}", slot.label || "");
 
-            // Generate .ics content
-            const pad2 = n => String(n).padStart(2, "0");
-            const icsDate = d => d.getUTCFullYear() + pad2(d.getUTCMonth()+1) + pad2(d.getUTCDate()) + "T" + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + pad2(d.getUTCSeconds()) + "Z";
-            const uid = slotId + "-" + participantId + "@4escheduler";
-            const icsContent = [
-              "BEGIN:VCALENDAR",
-              "VERSION:2.0",
-              "PRODID:-//4E Workshop Scheduler//EN",
-              "CALSCALE:GREGORIAN",
-              "METHOD:REQUEST",
-              "BEGIN:VEVENT",
-              "UID:" + uid,
-              "DTSTART:" + icsDate(start),
-              "DTEND:" + icsDate(end),
-              "SUMMARY:" + (slot.label || "4E Workshop Session"),
-              "DESCRIPTION:" + (group?.name || "") + " — " + (slot.label || "Workshop Session") + (finalMeetLink ? "\\nJoin: " + finalMeetLink : ""),
-              finalMeetLink ? "LOCATION:" + finalMeetLink : "",
-              "STATUS:CONFIRMED",
-              "ORGANIZER;CN=4E Workshop:mailto:noreply@4escheduler.com",
-              "ATTENDEE;CN=" + after.name + ";RSVP=TRUE:mailto:" + after.email,
-              "BEGIN:VALARM",
-              "TRIGGER:-PT30M",
-              "ACTION:DISPLAY",
-              "DESCRIPTION:Reminder",
-              "END:VALARM",
-              "END:VEVENT",
-              "END:VCALENDAR"
-            ].filter(Boolean).join("\r\n");
+          // Generate .ics content
+          const pad2 = n => String(n).padStart(2, "0");
+          const icsDate = d => d.getUTCFullYear() + pad2(d.getUTCMonth()+1) + pad2(d.getUTCDate()) + "T" + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + pad2(d.getUTCSeconds()) + "Z";
+          const icsUid = slotId + "-" + participantId + "@4escheduler";
+          const organizerEmail = GOOGLE_CALENDAR_ID;
+          const icsContent = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//4E Workshop Scheduler//EN",
+            "CALSCALE:GREGORIAN",
+            "METHOD:REQUEST",
+            "BEGIN:VEVENT",
+            "UID:" + icsUid,
+            "DTSTART:" + icsDate(start),
+            "DTEND:" + icsDate(end),
+            "SUMMARY:" + eventTitle,
+            "DESCRIPTION:" + (group?.name || "") + " — " + (slot.label || "Workshop Session") + (finalMeetLink ? "\\nJoin: " + finalMeetLink : ""),
+            finalMeetLink ? "LOCATION:" + finalMeetLink : "",
+            "STATUS:CONFIRMED",
+            "ORGANIZER;CN=4E Workshops:mailto:" + organizerEmail,
+            "ATTENDEE;CN=" + after.name + ";RSVP=TRUE;PARTSTAT=NEEDS-ACTION:mailto:" + after.email,
+            "BEGIN:VALARM",
+            "TRIGGER:-PT" + (config.gcal?.reminderMinutes || 30) + "M",
+            "ACTION:DISPLAY",
+            "DESCRIPTION:Reminder",
+            "END:VALARM",
+            "END:VEVENT",
+            "END:VCALENDAR"
+          ].filter(Boolean).join("\r\n");
 
-            const templateParams = {
-              to_email: after.email,
-              to_name: after.name,
-              session_title: slot.label || "4E Workshop Session",
-              session_date: dateStr,
-              session_time: timeStr,
-              session_duration: String(dur),
-              group_name: group?.name || "",
-              meeting_link: finalMeetLink || "",
-              scheduler_link: "https://sean4e.github.io/4E_Scheduler/",
-              participant_code: after.code || "",
-              ics_content: icsContent,
-            };
+          // Build MIME email with .ics attachment
+          const selfServiceInfo = group?.allowSelfService
+            ? `\n\nYour booking code: ${after.code || ""}\nView or change your booking: https://sean4e.github.io/4E_Scheduler/`
+            : "";
+          const boundary = "boundary_" + Date.now();
+          const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
+  <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 32px">
+    <h1 style="margin:0;font-size:22px;color:#fff">4E Workshop Session</h1>
+  </div>
+  <div style="padding:24px 32px">
+    <p style="font-size:16px;margin:0 0 8px">Hi <strong>${after.name}</strong>,</p>
+    <p style="color:#9d98be;margin:0 0 24px">Your session has been booked:</p>
+    <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:18px;margin-bottom:20px">
+      <div style="font-size:18px;font-weight:bold;margin-bottom:6px">${eventTitle}</div>
+      <div style="color:#a78bfa;font-size:14px;margin-bottom:4px">📅 ${dateStr}</div>
+      <div style="color:#22d3ee;font-size:14px;margin-bottom:4px">🕐 ${timeStr} · ${dur} minutes</div>
+      ${group?.name ? `<div style="color:#9d98be;font-size:13px">📁 ${group.name}</div>` : ""}
+    </div>
+    ${finalMeetLink ? `<div style="margin-bottom:20px"><a href="${finalMeetLink}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#22d3ee);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">Join Meeting</a><p style="color:#9d98be;font-size:12px;margin-top:8px">${finalMeetLink}</p></div>` : ""}
+    ${group?.allowSelfService ? `<div style="background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.2);border-radius:8px;padding:14px;margin-bottom:20px"><div style="font-size:12px;color:#22d3ee;margin-bottom:6px">YOUR BOOKING CODE</div><div style="font-family:monospace;font-size:18px;letter-spacing:3px;font-weight:bold">${after.code || ""}</div><a href="https://sean4e.github.io/4E_Scheduler/" style="color:#22d3ee;font-size:12px;margin-top:8px;display:inline-block">View or change your booking →</a></div>` : ""}
+    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design · Workshop Scheduler</p>
+  </div>
+</div>`;
 
-            const emailResp = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                service_id: ejs.serviceId,
-                template_id: ejs.templateId,
-                user_id: ejs.publicKey,
-                template_params: templateParams,
-                accessToken: EMAILJS_PRIVATE_KEY,
-              }),
+          const rawEmail = [
+            `From: 4E Workshops <${organizerEmail}>`,
+            `To: ${after.name} <${after.email}>`,
+            `Subject: ${eventTitle} — ${dateStr}`,
+            "MIME-Version: 1.0",
+            `Content-Type: multipart/mixed; boundary="${boundary}"`,
+            "",
+            `--${boundary}`,
+            "Content-Type: multipart/alternative; boundary=\"alt_" + boundary + "\"",
+            "",
+            "--alt_" + boundary,
+            "Content-Type: text/plain; charset=UTF-8",
+            "",
+            `Hi ${after.name},\n\nYour session has been booked:\n${eventTitle}\n${dateStr} at ${timeStr} (${dur} min)\n${finalMeetLink ? "Join: " + finalMeetLink + "\n" : ""}${selfServiceInfo}\n\n— 4E Workshops`,
+            "",
+            "--alt_" + boundary,
+            "Content-Type: text/html; charset=UTF-8",
+            "",
+            htmlBody,
+            "",
+            "--alt_" + boundary + "--",
+            "",
+            `--${boundary}`,
+            "Content-Type: text/calendar; charset=UTF-8; method=REQUEST",
+            "Content-Transfer-Encoding: base64",
+            "Content-Disposition: attachment; filename=\"invite.ics\"",
+            "",
+            Buffer.from(icsContent).toString("base64"),
+            "",
+            `--${boundary}--`,
+          ].join("\r\n");
+
+          // Send via Gmail API using admin's refresh token
+          const authDoc = await db.collection("config").doc("googleAuth").get();
+          if (authDoc.exists && authDoc.data().refreshToken) {
+            const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+            oauth2.setCredentials({ refresh_token: authDoc.data().refreshToken });
+            const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+            const encodedMessage = Buffer.from(rawEmail).toString("base64")
+              .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+            await gmail.users.messages.send({
+              userId: "me",
+              requestBody: { raw: encodedMessage },
             });
+            console.log("Gmail invite sent to", after.email, "for slot", slotId);
 
-            if (emailResp.ok) {
-              console.log("Email invite sent to", after.email, "for slot", slotId);
-              // Mark invite as sent on the booking entry
-              const currentDoc = await db.collection("participants").doc(participantId).get();
-              if (currentDoc.exists) {
-                const currentSlots = (currentDoc.data().bookedSlots || []).map(e => {
-                  const id = typeof e === "string" ? e : e.slotId;
-                  if (id === slotId) {
-                    const entry = typeof e === "string" ? { slotId: e, status: "booked", notes: "" } : { ...e };
-                    entry.inviteSent = true;
-                    return entry;
-                  }
-                  return e;
-                });
-                await db.collection("participants").doc(participantId).update({ bookedSlots: currentSlots });
-              }
-            } else {
-              console.error("EmailJS send failed:", await emailResp.text());
+            // Mark invite as sent
+            const currentDoc = await db.collection("participants").doc(participantId).get();
+            if (currentDoc.exists) {
+              const currentSlots = (currentDoc.data().bookedSlots || []).map(e => {
+                const id = typeof e === "string" ? e : e.slotId;
+                if (id === slotId) {
+                  const entry = typeof e === "string" ? { slotId: e, status: "booked", notes: "" } : { ...e };
+                  entry.inviteSent = true;
+                  return entry;
+                }
+                return e;
+              });
+              await db.collection("participants").doc(participantId).update({ bookedSlots: currentSlots });
             }
+          } else {
+            console.log("Gmail not available — admin needs to reconnect Google Calendar");
           }
         } catch (emailErr) {
-          console.error("Email invite error:", emailErr.message);
+          console.error("Gmail invite error:", emailErr.message);
         }
       }
     }
 
-    // Handle cancellations — delete calendar events
+    // Handle cancellations — delete calendar events + send cancellation email
     if (cancelled.length && before) {
       for (const slotId of cancelled) {
         const oldEntry = (before.bookedSlots || []).find(e => {
@@ -389,6 +431,63 @@ exports.onBookingChange = onDocumentWritten(
         });
         if (oldEntry && typeof oldEntry === "object" && oldEntry.gcalEventId) {
           await deleteCalendarEvent(oldEntry.gcalEventId);
+        }
+
+        // Send cancellation email via Gmail
+        const participantEmail = (after || before).email;
+        const participantName = (after || before).name;
+        if (participantEmail) {
+          try {
+            const slotDoc = await db.collection("slots").doc(slotId).get();
+            if (slotDoc.exists) {
+              const slot = slotDoc.data();
+              const [h, m] = slot.time.split(":").map(Number);
+              const cancelStart = new Date(slot.date + "T" + String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0") + ":00");
+              const dateStr = cancelStart.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Dublin" });
+              const timeStr = cancelStart.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Dublin" });
+
+              const cancelHtml = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
+  <div style="background:linear-gradient(135deg,#ef4444,#dc2626);padding:24px 32px">
+    <h1 style="margin:0;font-size:22px;color:#fff">Session Cancelled</h1>
+  </div>
+  <div style="padding:24px 32px">
+    <p style="font-size:16px;margin:0 0 8px">Hi <strong>${participantName}</strong>,</p>
+    <p style="color:#9d98be;margin:0 0 24px">Your session has been cancelled:</p>
+    <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:18px;margin-bottom:20px">
+      <div style="font-size:18px;font-weight:bold;margin-bottom:6px;text-decoration:line-through">${slot.label || "Workshop Session"}</div>
+      <div style="color:#f87171;font-size:14px">📅 ${dateStr} · 🕐 ${timeStr}</div>
+    </div>
+    <p style="color:#9d98be;font-size:14px">If you need to rebook, please contact your supervisor or trainer.</p>
+    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design · Workshop Scheduler</p>
+  </div>
+</div>`;
+
+              const authDoc = await db.collection("config").doc("googleAuth").get();
+              if (authDoc.exists && authDoc.data().refreshToken) {
+                const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+                oauth2.setCredentials({ refresh_token: authDoc.data().refreshToken });
+                const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+                const cancelRaw = [
+                  `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
+                  `To: ${participantName} <${participantEmail}>`,
+                  `Subject: Session Cancelled — ${slot.label || "Workshop"} on ${dateStr}`,
+                  "MIME-Version: 1.0",
+                  "Content-Type: text/html; charset=UTF-8",
+                  "",
+                  cancelHtml,
+                ].join("\r\n");
+
+                const encodedCancel = Buffer.from(cancelRaw).toString("base64")
+                  .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+                await gmail.users.messages.send({ userId: "me", requestBody: { raw: encodedCancel } });
+                console.log("Cancellation email sent to", participantEmail, "for slot", slotId);
+              }
+            }
+          } catch (cancelErr) {
+            console.error("Cancellation email error:", cancelErr.message);
+          }
         }
       }
     }
