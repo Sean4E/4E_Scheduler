@@ -626,7 +626,10 @@ input::placeholder{color:var(--text-dim)}
           <div id="adminCalWrap"></div>
           <div id="adminDayPanel" style="display:none">
             <div class="divider"></div>
-            <div id="adminDayTitle" class="eyebrow" style="color:var(--text-mid);margin-bottom:12px"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div id="adminDayTitle" class="eyebrow" style="color:var(--text-mid);margin:0"></div>
+              <button class="btn-g btn-sm" style="font-size:10px;padding:4px 12px;color:var(--red);border-color:rgba(248,113,113,.3)" onclick="clearDay(adminSelDate)" title="Remove all slots on this day">Clear Day</button>
+            </div>
             <div style="display:flex;gap:8px;margin-top:14px">
               <button class="btn-g btn-sm" style="flex:1" onclick="showSubForm('single')">+ Single Slot</button>
               <button class="btn-p btn-sm" style="flex:1" onclick="showSubForm('block')">⊞ Time Block</button>
@@ -2852,6 +2855,31 @@ async function removeSlot(id) {
     await batch.commit();
     toast('Slot removed');
   } catch(e) { toast('Error removing slot', 'err'); }
+}
+
+async function clearDay(ds) {
+  const gf = document.getElementById('calGroupFilter')?.value || 'all';
+  const daySlots = slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all'));
+  if (!daySlots.length) return;
+  const booked = daySlots.filter(s => getBooker(s.id));
+  let msg = `Remove all ${daySlots.length} slot${daySlots.length>1?'s':''} on ${fmtLong(ds)}`;
+  if (gf !== 'all') { const g = getGroup(gf); if (g) msg += ` for ${g.name}`; }
+  msg += '?';
+  if (booked.length) msg += `\n\n⚠️ ${booked.length} slot${booked.length>1?'s are':' is'} booked — participant${booked.length>1?'s':''} will be unassigned and notified.`;
+  if (!confirm(msg)) return;
+  try {
+    const batch = db.batch();
+    daySlots.forEach(s => {
+      batch.delete(db.collection('slots').doc(s.id));
+      participants.filter(p => isBooked(p, s.id)).forEach(p => {
+        batch.update(db.collection('participants').doc(p.id), {
+          bookedSlots: removeSlotEntry(p.bookedSlots, s.id)
+        });
+      });
+    });
+    await batch.commit();
+    toast(`${daySlots.length} slot${daySlots.length>1?'s':''} cleared`);
+  } catch(e) { toast('Error clearing day', 'err'); }
 }
 
 // ══════════════════════════════════════════════════════
