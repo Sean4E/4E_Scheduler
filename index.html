@@ -309,6 +309,9 @@ input::placeholder{color:var(--text-dim)}
 .participant-note{font-family:var(--mono);font-size:10px;color:var(--cyan);margin-top:3px;font-style:italic;padding:2px 0}
 /* self-service info banner */
 .self-service-banner{background:var(--cyan-dim);border:1px solid rgba(34,211,238,.2);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--cyan);font-family:var(--syne)}
+/* overlapping slot warning */
+.sc-overlap{border-color:rgba(251,146,60,.5)!important;box-shadow:0 0 8px rgba(251,146,60,.15)}
+.overlap-badge{font-family:var(--mono);font-size:8px;letter-spacing:1px;color:var(--orange);padding:2px 6px;border-radius:4px;background:var(--orange-dim);border:1px solid rgba(251,146,60,.2)}
 </style>
 </head>
 <body>
@@ -451,7 +454,7 @@ input::placeholder{color:var(--text-dim)}
           </div>
           <div class="inline-field">
             <label>SESSIONS</label>
-            <input type="number" id="supPSess" min="1" max="20" value="1" style="width:72px">
+            <input type="number" id="supPSess" min="0" max="20" value="1" style="width:72px" placeholder="0 = unlimited">
           </div>
           <div class="inline-field" style="min-width:160px">
             <label>GROUP</label>
@@ -599,13 +602,28 @@ input::placeholder{color:var(--text-dim)}
           </div>
           <div class="inline-field">
             <label>SESSIONS</label>
-            <input type="number" id="pSess" min="1" max="20" value="1" style="width:72px">
+            <input type="number" id="pSess" min="0" max="20" value="1" style="width:72px" placeholder="0 = unlimited">
           </div>
           <div class="inline-field" style="min-width:160px">
             <label>GROUP</label>
-            <select id="pGroup"></select>
+            <select id="pGroup" onchange="adminParticipantGroupFilter=this.value||'all';var ff=document.getElementById('adminPartGroupFilter');if(ff)ff.value=adminParticipantGroupFilter;renderParticipants()"></select>
           </div>
           <button class="btn-p" onclick="addParticipant()">+ Add</button>
+        </div>
+      </div>
+      <div class="card" style="padding:14px 16px;margin-bottom:14px">
+        <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+          <div class="inline-field">
+            <label>FILTER BY GROUP</label>
+            <select id="adminPartGroupFilter" onchange="adminParticipantGroupFilter=this.value;var pg=document.getElementById('pGroup');if(pg&&this.value!=='all')pg.value=this.value;renderParticipants()" style="min-width:160px"></select>
+          </div>
+          <div style="flex:1"></div>
+          <button class="btn-p btn-sm" onclick="adminSendWelcomeToFilteredGroup()" style="white-space:nowrap">📨 Send to Group</button>
+          <div class="inline-field" style="min-width:160px">
+            <label>INDIVIDUAL</label>
+            <select id="adminPartWelcomeSelect" style="min-width:160px"></select>
+          </div>
+          <button class="btn-p btn-sm" onclick="adminSendWelcomeToIndividual()" style="white-space:nowrap">📨 Send to Individual</button>
         </div>
       </div>
       <div id="participantsList"></div>
@@ -1296,6 +1314,75 @@ function populateWelcomeSelects() {
   });
 }
 
+// Populate the admin participants tab welcome individual dropdown
+function adminUpdateWelcomePartSelect() {
+  const sel = document.getElementById('adminPartWelcomeSelect');
+  if (!sel) return;
+  const gf = adminParticipantGroupFilter || 'all';
+  const filtered = gf === 'all' ? participants : participants.filter(p => p.groupId === gf);
+  const withEmail = filtered.filter(p => p.email);
+  sel.innerHTML = '<option value="">Select participant\u2026</option>' +
+    withEmail.map(p => {
+      const pg = getGroup(p.groupId);
+      return `<option value="${p.id}">${esc(p.name)}${pg ? ' (' + esc(pg.name) + ')' : ''}</option>`;
+    }).join('');
+}
+
+async function adminSendWelcomeToFilteredGroup() {
+  const gf = adminParticipantGroupFilter || 'all';
+  let targets;
+  if (gf === 'all') {
+    targets = participants.filter(p => p.email);
+    if (!targets.length) { toast('No participants with email addresses', 'err'); return; }
+  } else {
+    targets = participants.filter(p => p.groupId === gf && p.email);
+    if (!targets.length) { toast('No participants with email in this group', 'err'); return; }
+  }
+  const groupLabel = gf === 'all' ? 'all groups' : (getGroup(gf)?.name || 'this group');
+  if (!confirm(`Send welcome email to ${targets.length} participant${targets.length !== 1 ? 's' : ''} in ${groupLabel}?`)) return;
+  toast(`Sending ${targets.length} welcome email${targets.length !== 1 ? 's' : ''}\u2026`);
+  let sent = 0;
+  for (const p of targets) {
+    try {
+      const group = groups.find(g => g.id === p.groupId);
+      const resp = await fetch(FUNCTIONS_BASE + '/sendWelcomeEmail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          participantId: p.id, participantName: p.name, participantEmail: p.email,
+          participantCode: p.id, groupName: group?.name || '',
+          allowSelfService: group?.allowSelfService || false,
+        }),
+      });
+      if (resp.ok) sent++;
+    } catch(e) { console.error('Welcome email error for', p.name, e); }
+  }
+  toast(`Sent ${sent}/${targets.length} welcome emails`);
+}
+
+async function adminSendWelcomeToIndividual() {
+  const sel = document.getElementById('adminPartWelcomeSelect');
+  if (!sel || !sel.value) { toast('Select a participant first', 'err'); return; }
+  const p = participants.find(x => x.id === sel.value);
+  if (!p || !p.email) { toast('Participant has no email address', 'err'); return; }
+  if (!confirm(`Send welcome email to ${p.name}?`)) return;
+  const group = groups.find(g => g.id === p.groupId);
+  try {
+    toast('Sending\u2026');
+    const resp = await fetch(FUNCTIONS_BASE + '/sendWelcomeEmail', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        participantId: p.id, participantName: p.name, participantEmail: p.email,
+        participantCode: p.id, groupName: group?.name || '',
+        allowSelfService: group?.allowSelfService || false,
+      }),
+    });
+    if (resp.ok) toast(`Welcome email sent to ${p.name}`);
+    else toast('Failed to send', 'err');
+  } catch(e) { toast('Error sending email', 'err'); }
+}
+
 async function sendWelcomeEmails(mode) {
   // Cloud Function handles auth check — no need to block client-side
 
@@ -1861,7 +1948,8 @@ function renderSupGroupSelect() {
 async function supAddParticipant() {
   const name  = document.getElementById('supPName').value.trim();
   const email = document.getElementById('supPEmail').value.trim();
-  const n     = parseInt(document.getElementById('supPSess').value) || 1;
+  const raw   = document.getElementById('supPSess').value;
+  const n     = raw === '' ? 1 : (parseInt(raw) || 0);
   const gid   = supGroupId || document.getElementById('supPGroup').value || null;
   if (!name) return;
   const id = uid();
@@ -1894,7 +1982,8 @@ function supCancelEdit()  { supEditingId = null; renderSupParticipants(); }
 async function supSaveEdit(id) {
   const name  = document.getElementById('supEditName_'+id).value.trim();
   const email = document.getElementById('supEditEmail_'+id).value.trim();
-  const v     = parseInt(document.getElementById('supEditVal_'+id).value) || 1;
+  const rawV  = document.getElementById('supEditVal_'+id).value;
+  const v     = rawV === '' ? 1 : (parseInt(rawV) || 0);
   if (!name) { toast('Name is required', 'err'); return; }
   const update = { name, sessionsAllocated: v };
   if (email) update.email = email; else update.email = firebase.firestore.FieldValue.delete();
@@ -1931,24 +2020,26 @@ function renderSupParticipants() {
 
 function supParticipantRow(p, color) {
   const bc = bookedCount(p);
-  const pct = Math.min(100, (bc / p.sessionsAllocated) * 100);
-  const full = pct >= 100;
+  const unlimited = !p.sessionsAllocated || p.sessionsAllocated === 0;
+  const pct = unlimited ? 0 : Math.min(100, (bc / p.sessionsAllocated) * 100);
+  const full = !unlimited && pct >= 100;
   const isEd = supEditingId === p.id;
   return `<div class="card p-row">
     <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${esc(p.name[0].toUpperCase())}</div>
     <div class="p-info">
       <div class="p-name">${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
       <div class="prog-wrap">
-        <div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>
-        <span class="p-stat">${bc}/${p.sessionsAllocated}</span>
+        ${unlimited ? '' : `<div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>`}
+        <span class="p-stat">${unlimited ? bc + '/\u221E' : bc + '/' + p.sessionsAllocated}</span>
         ${full?'<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px">FULL</span>':''}
+        ${unlimited?'<span style="font-family:var(--mono);font-size:9px;color:var(--cyan);letter-spacing:1px">UNLIMITED</span>':''}
       </div>
     </div>
     ${isEd
       ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
            <input type="text" id="supEditName_${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:140px;padding:6px 10px">
            <input type="email" id="supEditEmail_${p.id}" value="${esc(p.email||'')}" placeholder="Email" style="width:180px;padding:6px 10px">
-           <input type="number" id="supEditVal_${p.id}" min="1" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px" title="Sessions">
+           <input type="number" id="supEditVal_${p.id}" min="0" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px" title="Sessions (0 = unlimited)" placeholder="0 = unlimited">
            <button class="btn-p btn-sm" onclick="supSaveEdit('${p.id}')">Save</button>
            <button class="btn-g btn-sm" onclick="supCancelEdit()">✕</button>
          </div>`
@@ -2001,6 +2092,7 @@ function renderSupDayPanel(ds) {
   }
 
   const partOptions = scoped.filter(p => {
+    if (!p.sessionsAllocated || p.sessionsAllocated === 0) return true;
     const rem = p.sessionsAllocated - bookedCount(p);
     return rem > 0;
   });
@@ -2014,7 +2106,8 @@ function renderSupDayPanel(ds) {
         <select id="supDayAssignPart" style="flex:1;min-width:140px" onchange="supAssignPid=this.value">
           <option value="">Select participant…</option>
           ${partOptions.map(p => {
-            const rem = p.sessionsAllocated - bookedCount(p);
+            const pUnlimited = !p.sessionsAllocated || p.sessionsAllocated === 0;
+            const rem = pUnlimited ? '\u221E' : (p.sessionsAllocated - bookedCount(p));
             return `<option value="${p.id}" ${p.id===supAssignPid?'selected':''}>${esc(p.name)} (${rem} left)</option>`;
           }).join('')}
         </select>
@@ -2030,10 +2123,13 @@ function renderSupDayPanel(ds) {
     const notes = b ? getSlotNotes(b, s.id) : '';
     const pNote = b ? getParticipantNote(b, s.id) : '';
     const past = isSlotPast(s);
+    const overlapping = isSlotOverlapping(s, supSlots);
     let cls = 'sc';
     if (isTaken) cls += ' sc-mine';
     if (past) cls += ' sc-past';
+    if (overlapping) cls += ' sc-overlap';
     return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}${past?';border-color:var(--border)':''}" ${!isTaken?`onclick="supQuickAssign('${s.id}')"`:''}>
+      ${overlapping?'<span class="overlap-badge">OVERLAP</span>':''}
       <div class="sc-time">${fmtTime(s.time)}${past?' <span class="asl-past-indicator">PAST</span>':''}</div>
       ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
       ${getMeetLink(s)?'<div style="font-size:10px;color:var(--cyan);margin-bottom:4px">🔗 Meeting link</div>':''}
@@ -2068,7 +2164,7 @@ async function supQuickAssign(sid) {
   const p = participants.find(x => x.id === supAssignPid);
   if (!p) return;
   const rem = p.sessionsAllocated - bookedCount(p);
-  if (rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
+  if (p.sessionsAllocated > 0 && rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
   if (isBooked(p, sid)) { toast('Already booked', 'err'); return; }
   if (getBooker(sid)) { toast('Slot already taken', 'err'); return; }
   // Check group maxSlots cap
@@ -2079,6 +2175,11 @@ async function supQuickAssign(sid) {
       const groupBookings = countGroupBookings(assignSlot.groupId);
       if (groupBookings >= grp.maxSlots) { toast('Group booking limit reached', 'err'); return; }
     }
+  }
+  // Cross-group overlap check
+  if (assignSlot) {
+    const otherBooker = isTimeBookedByOtherGroup(assignSlot.date, assignSlot.time, assignSlot.duration, sid, supSlots);
+    if (otherBooker) { toast('This time slot has already been booked by another group', 'err'); return; }
   }
   try {
     await db.collection('participants').doc(supAssignPid).update({
@@ -2148,12 +2249,11 @@ async function carryForward(pid, sid) {
   const p = participants.find(x => x.id === pid);
   if (!p) return;
   try {
-    // Remove the missed slot and add 1 to allocation
-    await db.collection('participants').doc(pid).update({
-      bookedSlots: removeSlotEntry(p.bookedSlots, sid),
-      sessionsAllocated: (p.sessionsAllocated || 1) + 1
-    });
-    toast('Session carried forward — allocation increased by 1 ✓');
+    // Remove the missed slot and add 1 to allocation (unless unlimited)
+    const carryUpdate = { bookedSlots: removeSlotEntry(p.bookedSlots, sid) };
+    if (p.sessionsAllocated > 0) carryUpdate.sessionsAllocated = p.sessionsAllocated + 1;
+    await db.collection('participants').doc(pid).update(carryUpdate);
+    toast(p.sessionsAllocated > 0 ? 'Session carried forward — allocation increased by 1 ✓' : 'Missed session removed ✓');
   } catch(e) { toast('Error carrying forward', 'err'); }
 }
 
@@ -2597,7 +2697,19 @@ function renderGroupSelects() {
     if (el) { const v = el.value; el.innerHTML = baseOptions; el.value = v || 'all'; }
   });
   const pGroupEl = document.getElementById('pGroup');
-  if (pGroupEl) pGroupEl.innerHTML = `<option value="">No group</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  if (pGroupEl) {
+    const pVal = pGroupEl.value;
+    pGroupEl.innerHTML = `<option value="">No group</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+    if (pVal) pGroupEl.value = pVal;
+  }
+  // Populate admin participant group filter
+  const partFilterEl = document.getElementById('adminPartGroupFilter');
+  if (partFilterEl) {
+    const fVal = partFilterEl.value || adminParticipantGroupFilter;
+    partFilterEl.innerHTML = `<option value="all">All Groups</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+    partFilterEl.value = fVal || 'all';
+    adminParticipantGroupFilter = partFilterEl.value;
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -2606,7 +2718,8 @@ function renderGroupSelects() {
 async function addParticipant() {
   const name  = document.getElementById('pName').value.trim();
   const email = document.getElementById('pEmail').value.trim();
-  const n     = parseInt(document.getElementById('pSess').value) || 1;
+  const raw   = document.getElementById('pSess').value;
+  const n     = raw === '' ? 1 : (parseInt(raw) || 0);
   const gid   = document.getElementById('pGroup').value || null;
   if (!name) return;
   const id = uid();
@@ -2639,7 +2752,8 @@ function cancelEdit()  { editingId = null; renderParticipants(); }
 async function saveEdit(id) {
   const name  = document.getElementById('editName_'+id).value.trim();
   const email = document.getElementById('editEmail_'+id).value.trim();
-  const v     = parseInt(document.getElementById('editVal_'+id).value) || 1;
+  const rawV  = document.getElementById('editVal_'+id).value;
+  const v     = rawV === '' ? 1 : (parseInt(rawV) || 0);
   if (!name) { toast('Name is required', 'err'); return; }
   const update = { name, sessionsAllocated: v };
   if (email) update.email = email; else update.email = firebase.firestore.FieldValue.delete();
@@ -2657,18 +2771,22 @@ function copyCode(code) {
 function renderParticipants() {
   const el = document.getElementById('participantsList');
   if (!el) return;
-  if (participants.length === 0) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">◇</div>No participants yet — add one above.</div>`;
+  // Apply group filter
+  const gf = adminParticipantGroupFilter || 'all';
+  const filteredParticipantsList = gf === 'all' ? participants : participants.filter(p => p.groupId === gf);
+  if (filteredParticipantsList.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">◇</div>${participants.length === 0 ? 'No participants yet — add one above.' : 'No participants in this group.'}</div>`;
     return;
   }
   const byGroup = {};
-  participants.forEach(p => { const k = p.groupId || '__none'; if (!byGroup[k]) byGroup[k]=[]; byGroup[k].push(p); });
+  filteredParticipantsList.forEach(p => { const k = p.groupId || '__none'; if (!byGroup[k]) byGroup[k]=[]; byGroup[k].push(p); });
   let html = '';
   groups.forEach(g => {
     const ps = byGroup[g.id] || [];
     if (!ps.length) return;
     html += `<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px">
       <div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid)">${ps.length} participant${ps.length!==1?'s':''}</div>
       <div style="flex:1;height:1px;background:var(--border)"></div></div>`;
     html += ps.map(p => participantRow(p, g.color)).join('');
   });
@@ -2677,28 +2795,32 @@ function renderParticipants() {
     html += byGroup['__none'].map(p => participantRow(p, 'var(--text-dim)')).join('');
   }
   el.innerHTML = html;
+  // Update the welcome individual dropdown in the admin participants tab
+  adminUpdateWelcomePartSelect();
 }
 
 function participantRow(p, color) {
   const bc = bookedCount(p);
-  const pct = Math.min(100, (bc / p.sessionsAllocated) * 100);
-  const full = pct >= 100;
+  const unlimited = !p.sessionsAllocated || p.sessionsAllocated === 0;
+  const pct = unlimited ? 0 : Math.min(100, (bc / p.sessionsAllocated) * 100);
+  const full = !unlimited && pct >= 100;
   const isEd = editingId === p.id;
   return `<div class="card p-row">
     <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${esc(p.name[0].toUpperCase())}</div>
     <div class="p-info">
       <div class="p-name">${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
       <div class="prog-wrap">
-        <div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>
-        <span class="p-stat">${bc}/${p.sessionsAllocated}</span>
+        ${unlimited ? '' : `<div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>`}
+        <span class="p-stat">${unlimited ? bc + '/\u221E' : bc + '/' + p.sessionsAllocated}</span>
         ${full?'<span style="font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:1px">FULL</span>':''}
+        ${unlimited?'<span style="font-family:var(--mono);font-size:9px;color:var(--cyan);letter-spacing:1px">UNLIMITED</span>':''}
       </div>
     </div>
     ${isEd
       ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
            <input type="text" id="editName_${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:140px;padding:6px 10px">
            <input type="email" id="editEmail_${p.id}" value="${esc(p.email||'')}" placeholder="Email" style="width:180px;padding:6px 10px">
-           <input type="number" id="editVal_${p.id}" min="1" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px" title="Sessions">
+           <input type="number" id="editVal_${p.id}" min="0" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px" title="Sessions (0 = unlimited)" placeholder="0 = unlimited">
            <button class="btn-p btn-sm" onclick="saveEdit('${p.id}')">Save</button>
            <button class="btn-g btn-sm" onclick="cancelEdit()">✕</button>
          </div>`
@@ -2716,6 +2838,35 @@ function showSubForm(type) {
   document.getElementById('form-block').style.display  = type==='block'  ? 'block' : 'none';
   if (type === 'block')  previewBlock();
   if (type === 'single') setTimeout(() => document.getElementById('sTime').focus(), 50);
+}
+
+// Check if a slot's date+time has overlapping slots in OTHER groups
+function isSlotOverlapping(slot, allSlots) {
+  const toMins = t => { const[h,m]=t.split(':').map(Number); return h*60+m; };
+  const sStart = toMins(slot.time), sEnd = sStart + (slot.duration||30);
+  return allSlots.some(s => {
+    if (s.id === slot.id) return false;
+    if (s.date !== slot.date) return false;
+    if (s.groupId === slot.groupId) return false;
+    const oStart = toMins(s.time), oEnd = oStart + (s.duration||30);
+    return sStart < oEnd && sEnd > oStart;
+  });
+}
+
+// Check if a specific date+time is already booked by someone from another group
+function isTimeBookedByOtherGroup(date, time, duration, excludeSlotId, allSlots) {
+  const toMins = t => { const[h,m]=t.split(':').map(Number); return h*60+m; };
+  const newStart = toMins(time), newEnd = newStart + (duration||30);
+  for (const s of allSlots) {
+    if (s.id === excludeSlotId) continue;
+    if (s.date !== date) continue;
+    const sStart = toMins(s.time), sEnd = sStart + (s.duration||30);
+    if (newStart < sEnd && newEnd > sStart) {
+      const booker = getBooker(s.id);
+      if (booker) return booker;
+    }
+  }
+  return null;
 }
 
 // Check if a time overlaps with existing slots in OTHER groups on the same date
@@ -2940,6 +3091,7 @@ function renderAdminCal() { renderCalendar('adminCalWrap', adminCalDate, adminSe
 
 let adminAssignPid = null; // participant selected for assignment in admin day panel
 let adminAssignGroupFilter = 'all'; // group filter for admin assign dropdown
+let adminParticipantGroupFilter = 'all'; // group filter for admin participant list
 
 function adminDayClick(ds) {
   adminSelDate = ds;
@@ -2961,7 +3113,7 @@ async function adminQuickAssign(sid) {
   const p = participants.find(x => x.id === adminAssignPid);
   if (!p) return;
   const rem = p.sessionsAllocated - bookedCount(p);
-  if (rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
+  if (p.sessionsAllocated > 0 && rem <= 0) { toast('No sessions remaining for ' + p.name, 'err'); return; }
   if (isBooked(p, sid)) { toast('Already booked', 'err'); return; }
   if (getBooker(sid)) { toast('Slot already taken', 'err'); return; }
   // Check group maxSlots cap
@@ -2972,6 +3124,11 @@ async function adminQuickAssign(sid) {
       const groupBookings = countGroupBookings(assignSlot.groupId);
       if (groupBookings >= grp.maxSlots) { toast('Group booking limit reached', 'err'); return; }
     }
+  }
+  // Cross-group overlap check
+  if (assignSlot) {
+    const otherBooker = isTimeBookedByOtherGroup(assignSlot.date, assignSlot.time, assignSlot.duration, sid, slots);
+    if (otherBooker) { toast('This time slot has already been booked by another group', 'err'); return; }
   }
   try {
     await db.collection('participants').doc(adminAssignPid).update({
@@ -3009,7 +3166,7 @@ function renderAdminDayPanel(ds) {
   const filteredParts = assignGf === 'all'
     ? participants
     : participants.filter(p => p.groupId === assignGf);
-  const partOptions = filteredParts.filter(p => (p.sessionsAllocated - bookedCount(p)) > 0);
+  const partOptions = filteredParts.filter(p => (!p.sessionsAllocated || p.sessionsAllocated === 0) || (p.sessionsAllocated - bookedCount(p)) > 0);
 
   // Auto-sync group filter from calendar top filter
   const calGf = document.getElementById('calGroupFilter')?.value || 'all';
@@ -3021,7 +3178,8 @@ function renderAdminDayPanel(ds) {
       <select id="adminDayAssignPart" style="flex:1;min-width:140px" onchange="adminAssignPid=this.value">
         <option value="">Select participant…</option>
         ${partOptions.map(p => {
-          const rem = p.sessionsAllocated - bookedCount(p);
+          const pUnlimited = !p.sessionsAllocated || p.sessionsAllocated === 0;
+          const rem = pUnlimited ? '\u221E' : (p.sessionsAllocated - bookedCount(p));
           const pg = getGroup(p.groupId);
           const gLabel = pg ? ' [' + esc(pg.name) + ']' : '';
           return `<option value="${p.id}" ${p.id===adminAssignPid?'selected':''}>${esc(p.name)}${gLabel} (${rem} left)</option>`;
@@ -3040,10 +3198,13 @@ function renderAdminDayPanel(ds) {
     const notes = b ? getSlotNotes(b, s.id) : '';
     const pNote = b ? getParticipantNote(b, s.id) : '';
     const past = isSlotPast(s);
+    const overlapping = isSlotOverlapping(s, slots);
     let cls = 'sc';
     if (isTaken) cls += ' sc-mine';
     if (past) cls += ' sc-past';
+    if (overlapping) cls += ' sc-overlap';
     return `<div class="${cls}" style="cursor:${isTaken?'default':'pointer'}${past?';border-color:var(--border)':''}" ${!isTaken?`onclick="adminQuickAssign('${s.id}')"`:''}>
+      ${overlapping?'<span class="overlap-badge">OVERLAP</span>':''}
       <div class="sc-time">${fmtTime(s.time)}${past?' <span class="asl-past-indicator">PAST</span>':''}</div>
       ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
       ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;margin-bottom:4px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
@@ -3137,7 +3298,8 @@ async function updateParticipantNote(sid, note) {
 
 function renderBookingDayPanel(ds) {
   const p       = participants.find(x => x.id === currentPid); if (!p) return;
-  const remaining = p.sessionsAllocated - bookedCount(p);
+  const unlimited = !p.sessionsAllocated || p.sessionsAllocated === 0;
+  const remaining = unlimited ? Infinity : p.sessionsAllocated - bookedCount(p);
   const daySlots  = bookingSlots.filter(s => s.date===ds);
   const el = document.getElementById('bookingDayPanel');
   if (!daySlots.length) { el.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots on this day.</div>`; return; }
@@ -3193,18 +3355,26 @@ function renderBookingDayPanel(ds) {
 function renderBookingHeader() {
   const p = participants.find(x => x.id === currentPid); if (!p) return;
   const bc = bookedCount(p);
-  const remaining = p.sessionsAllocated - bc;
+  const unlimited = !p.sessionsAllocated || p.sessionsAllocated === 0;
+  const remaining = unlimited ? Infinity : p.sessionsAllocated - bc;
   document.getElementById('bookingName').textContent = p.name;
   const g = getGroup(p.groupId);
   document.getElementById('bookingGroupChip').innerHTML = g
     ? `<div class="group-chip" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}"><div class="group-dot" style="background:${g.color}"></div>${esc(g.name)}</div>` : '';
-  document.getElementById('bookingMsg').textContent = remaining > 0
-    ? `You have ${remaining} session${remaining>1?'s':''} to book. Pick a date on the calendar.`
-    : 'All sessions booked! Tap a booked slot to cancel if needed.';
-  document.getElementById('sessNum').textContent = remaining;
-  document.getElementById('sessNum').style.color = remaining===0 ? 'var(--green)' : 'var(--purple)';
-  document.getElementById('sessDots').innerHTML = Array.from({length: p.sessionsAllocated}).map((_,i) =>
-    `<div class="sess-dot${i<bc?' on':''}"></div>`).join('');
+  if (unlimited) {
+    document.getElementById('bookingMsg').textContent = 'Unlimited sessions available. Pick a date on the calendar.';
+    document.getElementById('sessNum').textContent = '\u221E';
+    document.getElementById('sessNum').style.color = 'var(--cyan)';
+    document.getElementById('sessDots').innerHTML = `<span style="font-family:var(--mono);font-size:10px;color:var(--cyan)">Unlimited</span>`;
+  } else {
+    document.getElementById('bookingMsg').textContent = remaining > 0
+      ? `You have ${remaining} session${remaining>1?'s':''} to book. Pick a date on the calendar.`
+      : 'All sessions booked! Tap a booked slot to cancel if needed.';
+    document.getElementById('sessNum').textContent = remaining;
+    document.getElementById('sessNum').style.color = remaining===0 ? 'var(--green)' : 'var(--purple)';
+    document.getElementById('sessDots').innerHTML = Array.from({length: p.sessionsAllocated}).map((_,i) =>
+      `<div class="sess-dot${i<bc?' on':''}"></div>`).join('');
+  }
 }
 
 async function toggleBook(sId) {
@@ -3213,7 +3383,7 @@ async function toggleBook(sId) {
   const b         = getBooker(sId);
   const remaining = p.sessionsAllocated - bookedCount(p);
   if (!isMine && b)          { toast('Already taken', 'err'); return; }
-  if (!isMine && remaining<=0){ toast('No sessions remaining', 'err'); return; }
+  if (!isMine && p.sessionsAllocated > 0 && remaining<=0){ toast('No sessions remaining', 'err'); return; }
   // Check group maxSlots cap on new bookings
   if (!isMine) {
     const slot = bookingSlots.find(s => s.id === sId);
@@ -3223,6 +3393,11 @@ async function toggleBook(sId) {
         const groupBookings = countGroupBookings(slot.groupId);
         if (groupBookings >= grp.maxSlots) { toast('Group booking limit reached', 'err'); return; }
       }
+    }
+    // Cross-group overlap check: block if same date+time already booked by another group
+    if (slot) {
+      const otherBooker = isTimeBookedByOtherGroup(slot.date, slot.time, slot.duration, sId, bookingSlots);
+      if (otherBooker) { toast('This time slot has already been booked by another group', 'err'); return; }
     }
   }
   if (isMine && !participantRescheduling && !confirm('Cancel this booking?')) return;
