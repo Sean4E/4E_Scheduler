@@ -1932,6 +1932,8 @@ function startSupListeners() {
     if (supEditingId) return;
     renderSupParticipants();
     renderSupAssignSelects();
+    // Re-render day panel so booking status shows in realtime
+    if (supSelDate) renderSupDayPanel(supSelDate);
   }, err => console.error('sup participants listener:', err));
 
   unsubSupSlots = db.collection('slots').orderBy('date').onSnapshot(snap => {
@@ -2532,6 +2534,9 @@ function startAdminListeners() {
     renderGroupSelects();
     renderBadges();
     populateWelcomeSelects();
+    // Re-render calendar and day panel so group names/colors update
+    renderAdminCal();
+    if (adminSelDate) renderAdminDayPanel(adminSelDate);
   }, err => console.error('groups listener:', err));
 
   unsubParticipants = db.collection('participants').orderBy('name').onSnapshot(snap => {
@@ -3184,7 +3189,7 @@ let adminParticipantGroupFilter = 'all'; // group filter for admin participant l
 
 function adminDayClick(ds) {
   adminSelDate = ds;
-  adminAssignPid = null;
+  // Don't reset adminAssignPid — persist the selected participant across day changes
   showSubForm(null);
   renderAdminCal();
   renderAdminDayPanel(ds);
@@ -3260,6 +3265,11 @@ function renderAdminDayPanel(ds) {
   // Auto-sync group filter from calendar top filter
   const calGf = document.getElementById('calGroupFilter')?.value || 'all';
   if (adminAssignGroupFilter === 'all' && calGf !== 'all') adminAssignGroupFilter = calGf;
+
+  // Clear persisted selection if participant is no longer in the filtered options
+  if (adminAssignPid && !partOptions.find(p => p.id === adminAssignPid)) {
+    adminAssignPid = null;
+  }
 
   let html = `${partOptions.length ? `<div class="card" style="padding:12px 16px;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">

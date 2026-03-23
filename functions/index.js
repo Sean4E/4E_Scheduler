@@ -179,6 +179,25 @@ async function createZoomMeetingServer({ topic, startTime, duration, waitingRoom
   }
 }
 
+async function deleteZoomMeeting(meetingId) {
+  try {
+    const token = await getZoomToken();
+    const r = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}`, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    if (r.status === 204 || r.ok) {
+      console.log("Zoom meeting deleted:", meetingId);
+      return true;
+    }
+    console.error("Zoom delete error:", r.status);
+    return false;
+  } catch (err) {
+    console.error("Zoom delete error:", err.message);
+    return false;
+  }
+}
+
 // ══════════════════════════════════════════════════════
 //  FIRESTORE TRIGGER — Auto-create events on booking
 // ══════════════════════════════════════════════════════
@@ -332,21 +351,23 @@ exports.onBookingChange = onDocumentWritten(
             ? `\n\nYour booking code: ${after.code || ""}\nView or change your booking: https://sean4e.github.io/4E_Scheduler/`
             : "";
           const boundary = "boundary_" + Date.now();
+          const bookingLogoUrl = "https://sean4e.github.io/4E_Scheduler/logo_WHT.png";
           const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
-  <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 32px">
-    <h1 style="margin:0;font-size:22px;color:#fff">4E Workshop Session</h1>
+  <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 32px;display:flex;align-items:center;gap:16px">
+    <img src="${bookingLogoUrl}" alt="4E" style="height:40px;width:auto" />
+    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">4E Workshop Session</h1>
   </div>
   <div style="padding:24px 32px">
     <p style="font-size:16px;margin:0 0 8px">Hi <strong>${after.name}</strong>,</p>
     <p style="color:#9d98be;margin:0 0 24px">Your session has been booked:</p>
     <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:18px;margin-bottom:20px">
       <div style="font-size:18px;font-weight:bold;margin-bottom:6px">${eventTitle}</div>
-      <div style="color:#a78bfa;font-size:14px;margin-bottom:4px">📅 ${dateStr}</div>
-      <div style="color:#22d3ee;font-size:14px;margin-bottom:4px">🕐 ${timeStr} · ${dur} minutes</div>
-      ${group?.name ? `<div style="color:#9d98be;font-size:13px">📁 ${group.name}</div>` : ""}
+      <div style="color:#a78bfa;font-size:14px;margin-bottom:4px">${dateStr}</div>
+      <div style="color:#22d3ee;font-size:14px;margin-bottom:4px">${timeStr} · ${dur} minutes</div>
+      ${group?.name ? `<div style="color:#9d98be;font-size:13px">${group.name}</div>` : ""}
     </div>
     ${finalMeetLink ? `<div style="margin-bottom:20px"><a href="${finalMeetLink}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#22d3ee);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">Join Meeting</a><p style="color:#9d98be;font-size:12px;margin-top:8px">${finalMeetLink}</p></div>` : ""}
-    ${group?.allowSelfService ? `<div style="background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.2);border-radius:8px;padding:14px;margin-bottom:20px"><div style="font-size:12px;color:#22d3ee;margin-bottom:6px">YOUR BOOKING CODE</div><div style="font-family:monospace;font-size:18px;letter-spacing:3px;font-weight:bold">${after.code || ""}</div><a href="https://sean4e.github.io/4E_Scheduler/" style="color:#22d3ee;font-size:12px;margin-top:8px;display:inline-block">View or change your booking →</a></div>` : ""}
+    <div style="background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.2);border-radius:8px;padding:14px;margin-bottom:20px;text-align:center"><div style="font-size:12px;color:#22d3ee;margin-bottom:6px;letter-spacing:2px">YOUR ACCESS CODE</div><div style="font-family:monospace;font-size:22px;letter-spacing:4px;font-weight:bold;margin-bottom:10px">${after.code || ""}</div>${group?.allowSelfService ? `<a href="https://sean4e.github.io/4E_Scheduler/" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#22d3ee);color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:13px">Open Scheduler</a><p style="color:#9d98be;font-size:12px;margin-top:8px">Use your code to view and manage your bookings</p>` : `<p style="color:#9d98be;font-size:12px;margin-top:4px">Your sessions will be scheduled for you</p>`}</div>
     <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design · Workshop Scheduler</p>
   </div>
 </div>`;
@@ -422,7 +443,7 @@ exports.onBookingChange = onDocumentWritten(
       }
     }
 
-    // Handle cancellations — delete calendar events + send cancellation email
+    // Handle cancellations — delete calendar events + Zoom meetings + send cancellation email
     if (cancelled.length && before) {
       for (const slotId of cancelled) {
         const oldEntry = (before.bookedSlots || []).find(e => {
@@ -431,6 +452,24 @@ exports.onBookingChange = onDocumentWritten(
         });
         if (oldEntry && typeof oldEntry === "object" && oldEntry.gcalEventId) {
           await deleteCalendarEvent(oldEntry.gcalEventId);
+        }
+
+        // Delete Zoom meeting if one was auto-created for this slot
+        try {
+          const slotDocForZoom = await db.collection("slots").doc(slotId).get();
+          if (slotDocForZoom.exists) {
+            const slotData = slotDocForZoom.data();
+            if (slotData.zoomMeetingId) {
+              await deleteZoomMeeting(slotData.zoomMeetingId);
+              // Clear the auto-created meeting link and zoom ID from the slot
+              await db.collection("slots").doc(slotId).update({
+                meetingLink: admin.firestore.FieldValue.delete(),
+                zoomMeetingId: admin.firestore.FieldValue.delete(),
+              });
+            }
+          }
+        } catch (zoomErr) {
+          console.error("Zoom cleanup error for slot", slotId, ":", zoomErr.message);
         }
 
         // Send cancellation email via Gmail
@@ -446,9 +485,11 @@ exports.onBookingChange = onDocumentWritten(
               const dateStr = cancelStart.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Dublin" });
               const timeStr = cancelStart.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Dublin" });
 
+              const cancelLogoUrl = "https://sean4e.github.io/4E_Scheduler/logo_WHT.png";
               const cancelHtml = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
-  <div style="background:linear-gradient(135deg,#ef4444,#dc2626);padding:24px 32px">
-    <h1 style="margin:0;font-size:22px;color:#fff">Session Cancelled</h1>
+  <div style="background:linear-gradient(135deg,#ef4444,#dc2626);padding:24px 32px;display:flex;align-items:center;gap:16px">
+    <img src="${cancelLogoUrl}" alt="4E" style="height:40px;width:auto" />
+    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">Session Cancelled</h1>
   </div>
   <div style="padding:24px 32px">
     <p style="font-size:16px;margin:0 0 8px">Hi <strong>${participantName}</strong>,</p>
@@ -626,9 +667,11 @@ exports.sendReminders = onRequest({ region: REGION }, async (req, res) => {
         const titleTemplate = config.gcal?.titleTemplate || "4E Workshop — {participant}";
         const eventTitle = titleTemplate.replace("{participant}", p.name).replace("{group}", groupName).replace("{label}", slot.label || "");
 
+        const reminderLogoUrl = "https://sean4e.github.io/4E_Scheduler/logo_WHT.png";
         const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
-  <div style="background:linear-gradient(135deg,#fb923c,#f87171);padding:24px 32px">
-    <h1 style="margin:0;font-size:22px;color:#fff">Session Reminder</h1>
+  <div style="background:linear-gradient(135deg,#fb923c,#f87171);padding:24px 32px;display:flex;align-items:center;gap:16px">
+    <img src="${reminderLogoUrl}" alt="4E" style="height:40px;width:auto" />
+    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">Session Reminder</h1>
   </div>
   <div style="padding:24px 32px">
     <p style="font-size:16px;margin:0 0 8px">Hi <strong>${p.name}</strong>,</p>
