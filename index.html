@@ -3701,8 +3701,9 @@ async function sendReminders(mode) {
 const origStartAdminListeners = startAdminListeners;
 startAdminListeners = function() {
   origStartAdminListeners();
-  loadEmailSettings();
-  loadIntegrationSettings();
+  // Load settings in background — don't block admin sign-in
+  loadEmailSettings().catch(e => console.error('email settings:', e));
+  loadIntegrationSettings().catch(e => console.error('integration settings:', e));
 };
 
 // ══════════════════════════════════════════════════════
