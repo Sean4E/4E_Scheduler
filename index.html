@@ -2189,16 +2189,6 @@ function clearSupOverviewFilters() {
 }
 
 function renderSupOverview() {
-  const scoped = supGroupId ? participants.filter(p => p.groupId === supGroupId) : participants;
-  const totalBooked = scoped.reduce((a,p) => a+bookedCount(p), 0);
-  const totalAlloc  = scoped.reduce((a,p) => a+p.sessionsAllocated, 0);
-  document.getElementById('supStatsGrid').innerHTML = [
-    {l:'Participants',v:scoped.length,c:'var(--purple)'},
-    {l:'Available Slots',v:supSlots.filter(s=>!getBooker(s.id)).length,c:'var(--green)'},
-    {l:'Booked',v:totalBooked,c:'var(--orange)'},
-    {l:'Sessions Allocated',v:totalAlloc,c:'var(--cyan)'},
-  ].map(s=>`<div class="card stat-card"><div class="stat-n" style="color:${s.c}">${s.v}</div><div class="stat-l">${s.l}</div></div>`).join('');
-
   const statusFilter = document.getElementById('supOvFilterStatus')?.value || 'all';
   const fromDate = document.getElementById('supOvFilterFrom')?.value || '';
   const toDate = document.getElementById('supOvFilterTo')?.value || '';
@@ -2214,6 +2204,20 @@ function renderSupOverview() {
     }
     return true;
   });
+
+  const scoped = supGroupId ? participants.filter(p => p.groupId === supGroupId) : participants;
+  const filteredBooked = filtered.filter(s => getBooker(s.id)).length;
+  const filteredAvailable = filtered.filter(s => !getBooker(s.id)).length;
+  const filteredParticipantIds = new Set(filtered.map(s => getBooker(s.id)?.id).filter(Boolean));
+  const filteredParticipants = statusFilter === 'all' ? scoped : scoped.filter(p => filteredParticipantIds.has(p.id));
+  const totalAlloc = filteredParticipants.reduce((a,p) => a+p.sessionsAllocated, 0);
+
+  document.getElementById('supStatsGrid').innerHTML = [
+    {l:'Participants',v:filteredParticipants.length,c:'var(--purple)'},
+    {l:'Available Slots',v:filteredAvailable,c:'var(--green)'},
+    {l:'Booked',v:filteredBooked,c:'var(--orange)'},
+    {l:'Sessions Allocated',v:totalAlloc,c:'var(--cyan)'},
+  ].map(s=>`<div class="card stat-card"><div class="stat-n" style="color:${s.c}">${s.v}</div><div class="stat-l">${s.l}</div></div>`).join('');
 
   const oc = document.getElementById('supOverviewContent');
   if (!filtered.length) { oc.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots match the current filters.</div>`; return; }
@@ -3358,23 +3362,48 @@ function populateOverviewGroupFilter() {
 
 function renderOverview() {
   populateOverviewGroupFilter();
-  const total = participants.reduce((a,p) => a+bookedCount(p), 0);
-  document.getElementById('statsGrid').innerHTML = [
-    {l:'Groups',v:groups.length,c:'var(--cyan)'},
-    {l:'Participants',v:participants.length,c:'var(--purple)'},
-    {l:'Total Slots',v:slots.length,c:'var(--orange)'},
-    {l:'Booked',v:total,c:'var(--green)'},
-  ].map(s=>`<div class="card stat-card"><div class="stat-n" style="color:${s.c}">${s.v}</div><div class="stat-l">${s.l}</div></div>`).join('');
 
   const groupFilter = document.getElementById('ovFilterGroup')?.value || 'all';
   const statusFilter = document.getElementById('ovFilterStatus')?.value || 'all';
   const fromDate = document.getElementById('ovFilterFrom')?.value || '';
   const toDate = document.getElementById('ovFilterTo')?.value || '';
 
+  const displayGroups = groupFilter === 'all' ? groups : groups.filter(g => g.id === groupFilter);
+  const displayGroupIds = new Set(displayGroups.map(g => g.id));
+
+  // Build filtered slots for stats
+  let filteredSlots = slots.filter(s => groupFilter === 'all' || s.groupId === groupFilter || s.groupId === 'all');
+  if (fromDate) filteredSlots = filteredSlots.filter(s => s.date >= fromDate);
+  if (toDate) filteredSlots = filteredSlots.filter(s => s.date <= toDate);
+
+  let filteredBooked = 0;
+  let filteredParticipantIds = new Set();
+  filteredSlots.forEach(s => {
+    const b = getBooker(s.id);
+    if (b) {
+      const st = getSlotStatus(b, s.id) || 'booked';
+      if (statusFilter === 'all' || st === statusFilter) {
+        filteredBooked++;
+        filteredParticipantIds.add(b.id);
+      }
+    }
+  });
+  if (statusFilter !== 'all') {
+    filteredSlots = filteredSlots.filter(s => { const b = getBooker(s.id); if (!b) return false; const st = getSlotStatus(b, s.id) || 'booked'; return st === statusFilter; });
+  }
+  const filteredParticipants = statusFilter === 'all'
+    ? participants.filter(p => groupFilter === 'all' || p.groupId === groupFilter || displayGroupIds.has(p.groupId))
+    : participants.filter(p => filteredParticipantIds.has(p.id));
+
+  document.getElementById('statsGrid').innerHTML = [
+    {l:'Groups',v:displayGroups.length,c:'var(--cyan)'},
+    {l:'Participants',v:filteredParticipants.length,c:'var(--purple)'},
+    {l:'Total Slots',v:filteredSlots.length,c:'var(--orange)'},
+    {l:'Booked',v:filteredBooked,c:'var(--green)'},
+  ].map(s=>`<div class="card stat-card"><div class="stat-n" style="color:${s.c}">${s.v}</div><div class="stat-l">${s.l}</div></div>`).join('');
+
   const oc = document.getElementById('overviewContent');
   if (!slots.length) { oc.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots yet.</div>`; return; }
-
-  const displayGroups = groupFilter === 'all' ? groups : groups.filter(g => g.id === groupFilter);
 
   let html = displayGroups.map(g => {
     let gSlots = slots.filter(s => s.groupId===g.id || s.groupId==='all');
