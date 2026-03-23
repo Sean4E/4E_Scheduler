@@ -341,6 +341,31 @@ input::placeholder{color:var(--text-dim)}
 .media-note{width:100%;background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical;min-height:60px}
 .media-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .media-lightbox img{max-width:90%;max-height:90%;object-fit:contain;border-radius:8px}
+
+/* calendar popup dropdown */
+.cal-popup{position:absolute;z-index:100;background:var(--glass);border:1px solid var(--border);border-radius:10px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:6px;min-width:180px;animation:fadeIn .15s ease;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.cal-popup-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:7px;cursor:pointer;transition:background .15s;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap}
+.cal-popup-row:hover{background:var(--glass-mid)}
+.cal-popup-row span.cal-icon{font-size:14px;flex-shrink:0}
+
+/* host confirm badge */
+.host-confirm-btn{background:transparent;border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-family:var(--mono);font-size:9px;letter-spacing:1px;cursor:pointer;transition:all .2s;color:var(--text-dim)}
+.host-confirm-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+.host-confirm-btn.confirmed{background:var(--cyan-dim);border-color:rgba(34,211,238,.3);color:var(--cyan)}
+
+/* multi-select group checkboxes */
+.group-multi-select{background:var(--glass-mid);border:1px solid var(--border);border-radius:8px;padding:8px 10px;max-height:150px;overflow-y:auto;margin-top:4px}
+.group-multi-select label{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;color:var(--text);cursor:pointer}
+.group-multi-select label:hover{color:var(--purple)}
+.group-multi-select input[type="checkbox"]{accent-color:var(--purple);width:14px;height:14px;cursor:pointer}
+.group-chips-display{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.group-chip-mini{font-size:9px;padding:2px 6px;border-radius:4px;font-family:var(--mono);letter-spacing:1px}
+
+/* sessions hint label */
+.sessions-hint{font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:2px;letter-spacing:0.5px}
+
+/* block success message */
+.block-success{background:var(--green-dim);border:1px solid rgba(52,211,153,.25);border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12px;color:var(--green);font-family:var(--syne);animation:fadeIn .2s ease}
 </style>
 </head>
 <body>
@@ -483,7 +508,8 @@ input::placeholder{color:var(--text-dim)}
           </div>
           <div class="inline-field">
             <label>SESSIONS</label>
-            <input type="number" id="supPSess" min="0" max="20" value="1" style="width:72px" placeholder="0 = unlimited">
+            <input type="number" id="supPSess" min="0" max="20" value="" style="width:72px" placeholder="&#8734;">
+            <div class="sessions-hint">Leave empty for unlimited</div>
           </div>
           <div class="inline-field" style="min-width:160px">
             <label>GROUP</label>
@@ -517,6 +543,7 @@ input::placeholder{color:var(--text-dim)}
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <div style="flex:1"></div>
         <button class="btn-g btn-sm" onclick="sendReminders('sup')" id="btnSupSendReminders" title="Send reminder emails for sessions in the next 24 hours">📧 Send Reminders</button>
+        <button class="btn-g btn-sm" onclick="sendSupReport()" id="btnSupSendReport" title="Send a summary report email">📊 Send Report Now</button>
       </div>
       <div class="filter-bar card">
         <div class="inline-field">
@@ -631,7 +658,8 @@ input::placeholder{color:var(--text-dim)}
           </div>
           <div class="inline-field">
             <label>SESSIONS</label>
-            <input type="number" id="pSess" min="0" max="20" value="1" style="width:72px" placeholder="0 = unlimited">
+            <input type="number" id="pSess" min="0" max="20" value="" style="width:72px" placeholder="&#8734;">
+            <div class="sessions-hint">Leave empty for unlimited</div>
           </div>
           <div class="inline-field" style="min-width:160px">
             <label>GROUP</label>
@@ -708,9 +736,9 @@ input::placeholder{color:var(--text-dim)}
                   <label>LABEL (optional)</label>
                   <input type="text" id="sLabel" placeholder="e.g. Intro">
                 </div>
-                <div class="inline-field" style="min-width:130px">
-                  <label>GROUP</label>
-                  <select id="sGroup"></select>
+                <div class="inline-field" style="min-width:160px">
+                  <label>GROUP(S)</label>
+                  <div id="sGroupMulti" class="group-multi-select"></div>
                 </div>
               </div>
               <div class="form-row" style="margin-top:10px">
@@ -763,9 +791,9 @@ input::placeholder{color:var(--text-dim)}
                     <option value="15">15 min</option>
                   </select>
                 </div>
-                <div class="inline-field" style="min-width:130px">
-                  <label>GROUP</label>
-                  <select id="bGroup"></select>
+                <div class="inline-field" style="min-width:160px">
+                  <label>GROUP(S)</label>
+                  <div id="bGroupMulti" class="group-multi-select"></div>
                 </div>
               </div>
               <div class="form-row" style="margin-top:10px">
@@ -778,9 +806,10 @@ input::placeholder{color:var(--text-dim)}
                 <div id="blockPreviewText"></div>
                 <div id="blockPreviewSlots" class="block-slot-preview"></div>
               </div>
+              <div id="blockSuccessMsg" style="display:none"></div>
               <div style="display:flex;gap:8px;margin-top:12px">
                 <button class="btn-p btn-sm" onclick="addBlock()" style="flex:1">Generate Slots</button>
-                <button class="btn-g btn-sm" onclick="showSubForm(null)">Cancel</button>
+                <button class="btn-g btn-sm" onclick="showSubForm(null)">Done</button>
               </div>
             </div>
           </div>
@@ -1700,12 +1729,41 @@ function outlookCalURL(slot, pName) {
   return url;
 }
 
+let _calPopupCounter = 0;
+function calendarPopupBtn(slot, participantName, slotSource) {
+  const uid = 'calpop_' + (slot.id || '').replace(/[^a-zA-Z0-9]/g,'') + '_' + (++_calPopupCounter);
+  return `<div style="position:relative;display:inline-block">
+    <button class="btn-g btn-sm" style="font-size:10px;padding:4px 12px" onclick="event.stopPropagation();toggleCalPopup('${uid}')">📅 Add to Calendar</button>
+    <div id="${uid}" class="cal-popup" style="display:none;top:100%;left:0;margin-top:4px">
+      <a class="cal-popup-row" href="${googleCalURL(slot,participantName)}" target="_blank" rel="noopener" onclick="closeAllCalPopups()"><span class="cal-icon">📅</span> Google Calendar</a>
+      <a class="cal-popup-row" href="${outlookCalURL(slot,participantName)}" target="_blank" rel="noopener" onclick="closeAllCalPopups()" style="text-decoration:none;color:var(--text)"><span class="cal-icon">📆</span> Outlook</a>
+      <div class="cal-popup-row" onclick="event.stopPropagation();downloadICS(${slotSource}.find(x=>x.id==='${slot.id}'),'${esc(participantName)}');closeAllCalPopups()"><span class="cal-icon">🍎</span> Apple Calendar (.ics)</div>
+    </div>
+  </div>`;
+}
+
+function toggleCalPopup(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const wasOpen = el.style.display !== 'none';
+  closeAllCalPopups();
+  if (!wasOpen) el.style.display = 'block';
+}
+
+function closeAllCalPopups() {
+  document.querySelectorAll('.cal-popup').forEach(p => p.style.display = 'none');
+}
+
+// Close calendar popups on click outside or Escape
+document.addEventListener('click', e => {
+  if (!e.target.closest('.cal-popup') && !e.target.closest('[onclick*="toggleCalPopup"]')) closeAllCalPopups();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllCalPopups(); });
+
 function calendarButtons(slot, participantName) {
   const link = getMeetLink(slot);
   return `<div style="display:flex;gap:6px;flex-wrap:wrap">
-    <a class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;text-decoration:none" href="${googleCalURL(slot)}" target="_blank" rel="noopener" title="Add to Google Calendar">📅 Google</a>
-    <a class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;text-decoration:none" href="${outlookCalURL(slot)}" target="_blank" rel="noopener" title="Add to Outlook">📅 Outlook</a>
-    <button class="btn-g btn-sm" style="font-size:9px;padding:4px 10px" onclick="downloadICS(${slot.id?`supSlots.find(x=>x.id==='${slot.id}')||bookingSlots.find(x=>x.id==='${slot.id}')||slots.find(x=>x.id==='${slot.id}')`:`null`},'${esc(participantName)}')" title="Download .ics (Apple Calendar / other)">📅 .ics</button>
+    ${calendarPopupBtn(slot, participantName, 'supSlots.concat(bookingSlots).concat(slots)')}
     ${link?`<a class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;text-decoration:none;color:var(--cyan)" href="${esc(link)}" target="_blank" rel="noopener">🔗 Join</a>`:''}
   </div>`;
 }
@@ -1938,7 +1996,7 @@ function startSupListeners() {
 
   unsubSupSlots = db.collection('slots').orderBy('date').onSnapshot(snap => {
     const all = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => a.date===b.date ? (a.time||'').localeCompare(b.time||'') : 0);
-    supSlots = all.filter(s => !supGroupId || s.groupId==='all' || s.groupId===supGroupId);
+    supSlots = all.filter(s => !supGroupId || s.groupId==='all' || s.groupId===supGroupId || (s.groupIds && s.groupIds.includes(supGroupId)));
     renderSupCal();
     if (supSelDate) renderSupDayPanel(supSelDate);
   }, err => console.error('sup slots listener:', err));
@@ -1993,7 +2051,7 @@ async function supAddParticipant() {
   const name  = document.getElementById('supPName').value.trim();
   const email = document.getElementById('supPEmail').value.trim();
   const raw   = document.getElementById('supPSess').value;
-  const n     = raw === '' ? 1 : (parseInt(raw) || 0);
+  const n     = raw === '' ? 0 : (parseInt(raw) || 0);
   const gid   = supGroupId || document.getElementById('supPGroup').value || null;
   if (!name) return;
   const id = uid();
@@ -2004,7 +2062,7 @@ async function supAddParticipant() {
     toast(`${name} added ✓`);
     document.getElementById('supPName').value  = '';
     document.getElementById('supPEmail').value = '';
-    document.getElementById('supPSess').value  = 1;
+    document.getElementById('supPSess').value  = '';
   } catch(e) { toast('Error adding participant', 'err'); }
 }
 
@@ -2027,7 +2085,7 @@ async function supSaveEdit(id) {
   const name  = document.getElementById('supEditName_'+id).value.trim();
   const email = document.getElementById('supEditEmail_'+id).value.trim();
   const rawV  = document.getElementById('supEditVal_'+id).value;
-  const v     = rawV === '' ? 1 : (parseInt(rawV) || 0);
+  const v     = rawV === '' ? 0 : (parseInt(rawV) || 0);
   if (!name) { toast('Name is required', 'err'); return; }
   const update = { name, sessionsAllocated: v };
   if (email) update.email = email; else update.email = firebase.firestore.FieldValue.delete();
@@ -2083,7 +2141,7 @@ function supParticipantRow(p, color) {
       ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
            <input type="text" id="supEditName_${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:140px;padding:6px 10px">
            <input type="email" id="supEditEmail_${p.id}" value="${esc(p.email||'')}" placeholder="Email" style="width:180px;padding:6px 10px">
-           <input type="number" id="supEditVal_${p.id}" min="0" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px" title="Sessions (0 = unlimited)" placeholder="0 = unlimited">
+           <input type="number" id="supEditVal_${p.id}" min="0" max="20" value="${p.sessionsAllocated || ''}" style="width:60px;padding:6px 10px" title="Sessions (empty = unlimited)" placeholder="&#8734;">
            <button class="btn-p btn-sm" onclick="supSaveEdit('${p.id}')">Save</button>
            <button class="btn-g btn-sm" onclick="supCancelEdit()">✕</button>
          </div>`
@@ -2180,15 +2238,13 @@ function renderSupDayPanel(ds) {
       <div class="sc-status" style="color:${isTaken?'var(--purple)':'var(--green)'}">
         ${isTaken?'● '+esc(b.name):'AVAILABLE'}
       </div>
-      ${isTaken ? `<div style="margin-top:4px">${statusBadge(status)}</div>
+      ${isTaken ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">${statusBadge(status)}${getHostConfirmBtnAdmin(b, s)}</div>
       ${pNote?`<div class="participant-note">📝 From participant: ${esc(pNote)}</div>`:''}
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
         <button class="btn-g btn-sm ${status==='completed'?'btn-status-active-completed':''}" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">${status==='completed'?'✓ Done ●':'✓ Done'}</button>
         <button class="btn-g btn-sm ${status==='missed'?'btn-status-active-missed':''}" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">${status==='missed'?'✗ Missed ●':'✗ Missed'}</button>
         ${status==='missed'?`<button class="btn-carry" style="font-size:9px;padding:3px 8px" onclick="carryForward('${b.id}','${s.id}')">↻ Carry Forward</button>`:''}
-        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Google</a>
-        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Outlook</a>
-        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(supSlots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
+        ${calendarPopupBtn(s, b.name, 'supSlots')}
         ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
         <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--orange)" onclick="supRescheduleSlot('${b.id}','${s.id}')">↻ Reschedule</button>
         <button class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;color:var(--red);border-color:rgba(248,113,113,.3)" onclick="supUnassignSlot('${b.id}','${s.id}')">Unassign</button>
@@ -2382,7 +2438,7 @@ function renderSupOverview() {
         <div class="ov-time">${fmtTime(s.time)}</div>
         ${s.label?`<div class="ov-lbl">${esc(s.label)}</div>`:''}
         <div class="ov-who" style="color:${b?'var(--purple)':'var(--green)'}">${b?esc(b.name):'Available'}</div>
-        ${b?statusBadge(status):''}
+        ${b?statusBadge(status):''}${b?dualConfirmBadge(b,s.id):''}
         ${notes?`<div class="note-display">${esc(notes)}</div>`:''}
         ${s.meetingLink?'<span style="font-size:10px">🔗</span>':''}
         ${b?`<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
@@ -2745,12 +2801,55 @@ function renderGroups() {
   }).join('');
 }
 
+function renderGroupMultiSelect(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = `<label style="font-weight:700;border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:2px">
+    <input type="checkbox" checked onchange="groupMultiAllChanged('${containerId}',this)"> All Groups
+  </label>` + groups.map(g => `<label>
+    <input type="checkbox" value="${g.id}" disabled onchange="groupMultiItemChanged('${containerId}')">
+    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${g.color}"></span> ${esc(g.name)}
+  </label>`).join('');
+}
+
+function groupMultiAllChanged(containerId, allCb) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.querySelectorAll('input[type="checkbox"][value]').forEach(cb => {
+    cb.disabled = allCb.checked;
+    if (allCb.checked) cb.checked = false;
+  });
+}
+
+function groupMultiItemChanged(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const allCb = el.querySelector('input[type="checkbox"]:not([value])');
+  const checked = el.querySelectorAll('input[type="checkbox"][value]:checked');
+  if (checked.length === 0 && allCb) allCb.checked = true;
+}
+
+function getMultiGroupSelection(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return { groupId: 'all', groupIds: null };
+  const allCb = el.querySelector('input[type="checkbox"]:not([value])');
+  if (allCb && allCb.checked) return { groupId: 'all', groupIds: null };
+  const checked = Array.from(el.querySelectorAll('input[type="checkbox"][value]:checked')).map(cb => cb.value);
+  if (checked.length === 0) return { groupId: 'all', groupIds: null };
+  if (checked.length === 1) return { groupId: checked[0], groupIds: null };
+  // Multiple groups selected
+  return { groupId: 'all', groupIds: checked };
+}
+
 function renderGroupSelects() {
   const baseOptions = `<option value="all">All Groups</option>` + groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
-  ['sGroup','bGroup','calGroupFilter'].forEach(id => {
+  ['calGroupFilter'].forEach(id => {
     const el = document.getElementById(id);
     if (el) { const v = el.value; el.innerHTML = baseOptions; el.value = v || 'all'; }
   });
+  // Render multi-select checkboxes for slot forms
+  renderGroupMultiSelect('sGroupMulti');
+  renderGroupMultiSelect('bGroupMulti');
   const pGroupEl = document.getElementById('pGroup');
   if (pGroupEl) {
     const pVal = pGroupEl.value;
@@ -2774,7 +2873,7 @@ async function addParticipant() {
   const name  = document.getElementById('pName').value.trim();
   const email = document.getElementById('pEmail').value.trim();
   const raw   = document.getElementById('pSess').value;
-  const n     = raw === '' ? 1 : (parseInt(raw) || 0);
+  const n     = raw === '' ? 0 : (parseInt(raw) || 0);
   const gid   = document.getElementById('pGroup').value || null;
   if (!name) return;
   const id = uid();
@@ -2785,7 +2884,7 @@ async function addParticipant() {
     toast(`${name} added ✓`);
     document.getElementById('pName').value  = '';
     document.getElementById('pEmail').value = '';
-    document.getElementById('pSess').value  = 1;
+    document.getElementById('pSess').value  = '';
   } catch(e) { toast('Error adding participant', 'err'); }
 }
 
@@ -2808,7 +2907,7 @@ async function saveEdit(id) {
   const name  = document.getElementById('editName_'+id).value.trim();
   const email = document.getElementById('editEmail_'+id).value.trim();
   const rawV  = document.getElementById('editVal_'+id).value;
-  const v     = rawV === '' ? 1 : (parseInt(rawV) || 0);
+  const v     = rawV === '' ? 0 : (parseInt(rawV) || 0);
   if (!name) { toast('Name is required', 'err'); return; }
   const update = { name, sessionsAllocated: v };
   if (email) update.email = email; else update.email = firebase.firestore.FieldValue.delete();
@@ -2875,7 +2974,7 @@ function participantRow(p, color) {
       ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
            <input type="text" id="editName_${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:140px;padding:6px 10px">
            <input type="email" id="editEmail_${p.id}" value="${esc(p.email||'')}" placeholder="Email" style="width:180px;padding:6px 10px">
-           <input type="number" id="editVal_${p.id}" min="0" max="20" value="${p.sessionsAllocated}" style="width:60px;padding:6px 10px" title="Sessions (0 = unlimited)" placeholder="0 = unlimited">
+           <input type="number" id="editVal_${p.id}" min="0" max="20" value="${p.sessionsAllocated || ''}" style="width:60px;padding:6px 10px" title="Sessions (empty = unlimited)" placeholder="&#8734;">
            <button class="btn-p btn-sm" onclick="saveEdit('${p.id}')">Save</button>
            <button class="btn-g btn-sm" onclick="cancelEdit()">✕</button>
          </div>`
@@ -2919,17 +3018,21 @@ function highlightTimePill(containerId, time) {
 function showSubForm(type) {
   document.getElementById('form-single').style.display = type==='single' ? 'block' : 'none';
   document.getElementById('form-block').style.display  = type==='block'  ? 'block' : 'none';
+  // Hide block success message when switching forms
+  const bsm = document.getElementById('blockSuccessMsg');
+  if (bsm) bsm.style.display = 'none';
   if (type === 'block') {
     renderTimePills('blockStartPills', 'bStart', 'previewBlock');
     renderTimePills('blockEndPills', 'bEnd', 'previewBlock');
-    // Highlight existing values
     highlightTimePill('blockStartPills', document.getElementById('bStart').value);
     highlightTimePill('blockEndPills', document.getElementById('bEnd').value);
+    renderGroupMultiSelect('bGroupMulti');
     previewBlock();
   }
   if (type === 'single') {
     renderTimePills('singleTimePills', 'sTime');
     highlightTimePill('singleTimePills', document.getElementById('sTime').value);
+    renderGroupMultiSelect('sGroupMulti');
     setTimeout(() => document.getElementById('sTime').focus(), 50);
   }
 }
@@ -2983,7 +3086,9 @@ async function addSingleSlot() {
   const time     = document.getElementById('sTime').value;
   const dur      = parseInt(document.getElementById('sDur').value) || 30;
   const label    = document.getElementById('sLabel').value.trim();
-  const groupId  = document.getElementById('sGroup').value || 'all';
+  const groupResult = getMultiGroupSelection('sGroupMulti');
+  const groupId  = groupResult.groupId;
+  const groupIds = groupResult.groupIds;
   const meetLink = document.getElementById('sMeetLink').value.trim();
   if (!time) { toast('Pick a time', 'err'); return; }
   if (slots.find(s => s.date===adminSelDate && s.time===time && s.groupId===groupId)) { toast('Slot already exists', 'err'); return; }
@@ -2998,6 +3103,7 @@ async function addSingleSlot() {
     }
   }
   const data = { date: adminSelDate, time, duration: dur, label, groupId };
+  if (groupIds) data.groupIds = groupIds;
   if (meetLink) data.meetingLink = meetLink;
   try {
     await db.collection('slots').doc(uid()).set(data);
@@ -3038,7 +3144,9 @@ async function addBlock() {
   const end     = document.getElementById('bEnd').value;
   const dur     = parseInt(document.getElementById('bDur').value);
   const brk     = parseInt(document.getElementById('bBreak').value);
-  const groupId = document.getElementById('bGroup').value || 'all';
+  const groupResult = getMultiGroupSelection('bGroupMulti');
+  const groupId = groupResult.groupId;
+  const groupIds = groupResult.groupIds;
   const label    = document.getElementById('bDur').options[document.getElementById('bDur').selectedIndex].text + ' session';
   const meetLink = document.getElementById('bMeetLink').value.trim();
   if (!start || !end) { toast('Set start and end times', 'err'); return; }
@@ -3064,13 +3172,26 @@ async function addBlock() {
     times.forEach(t => {
       if (!slots.find(s => s.date===adminSelDate && s.time===t && s.groupId===groupId)) {
         const data = { date: adminSelDate, time: t, duration: dur, label, groupId };
+        if (groupIds) data.groupIds = groupIds;
         if (meetLink) data.meetingLink = meetLink;
         batch.set(db.collection('slots').doc(uid()), data);
         added++;
       }
     });
     await batch.commit();
-    showSubForm(null);
+    // Feature 3: Don't close form, reset times and show success
+    document.getElementById('bStart').value = '';
+    document.getElementById('bEnd').value = '';
+    document.getElementById('bMeetLink').value = '';
+    highlightTimePill('blockStartPills', '');
+    highlightTimePill('blockEndPills', '');
+    document.getElementById('blockPreview').style.display = 'none';
+    const successEl = document.getElementById('blockSuccessMsg');
+    if (successEl) {
+      successEl.innerHTML = `<div class="block-success">Block added (${added} slot${added!==1?'s':''}). Add another block or click Done.</div>`;
+      successEl.style.display = 'block';
+      setTimeout(() => { successEl.style.display = 'none'; }, 5000);
+    }
     toast(`${added} slot${added!==1?'s':''} generated ✓`);
   } catch(e) { toast('Error generating slots', 'err'); }
 }
@@ -3108,7 +3229,7 @@ async function removeSlot(id) {
 
 async function clearDay(ds) {
   const gf = document.getElementById('calGroupFilter')?.value || 'all';
-  const daySlots = slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all'));
+  const daySlots = slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all'||(s.groupIds&&s.groupIds.includes(gf))));
   if (!daySlots.length) return;
   const booked = daySlots.filter(s => getBooker(s.id));
   let msg = `Remove all ${daySlots.length} slot${daySlots.length>1?'s':''} on ${fmtLong(ds)}`;
@@ -3175,7 +3296,7 @@ function adminNext() { adminCalDate = new Date(adminCalDate.getFullYear(), admin
 
 function adminDotsFn(ds) {
   const gf = document.getElementById('calGroupFilter')?.value || 'all';
-  return slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all')).map(s => {
+  return slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all'||(s.groupIds&&s.groupIds.includes(gf)))).map(s => {
     if (getBooker(s.id)) return 'var(--purple)';
     const g = getGroup(s.groupId); return g ? g.color : 'var(--orange)';
   });
@@ -3247,7 +3368,7 @@ async function adminUnassignSlot(pid, sid) {
 function renderAdminDayPanel(ds) {
   document.getElementById('adminDayTitle').textContent = fmtLong(ds);
   const gf       = document.getElementById('calGroupFilter')?.value || 'all';
-  const daySlots = slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all'));
+  const daySlots = slots.filter(s => s.date===ds && (gf==='all'||s.groupId===gf||s.groupId==='all'||(s.groupIds&&s.groupIds.includes(gf))));
   const el       = document.getElementById('adminDaySlots');
 
   if (!daySlots.length) {
@@ -3306,20 +3427,18 @@ function renderAdminDayPanel(ds) {
       ${overlapping?'<span class="overlap-badge">OVERLAP</span>':''}
       <div class="sc-time">${fmtTime(s.time)}${past?' <span class="asl-past-indicator">PAST</span>':''}</div>
       ${s.label?`<div class="sc-lbl">${esc(s.label)}</div>`:''}
-      ${g&&g.id!=='all'?`<div class="group-chip" style="font-size:10px;padding:2px 8px;margin-bottom:4px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`:''}
+      ${renderSlotGroupChips(s)}
       ${link?'<div style="font-size:10px;color:var(--cyan);margin-bottom:4px">🔗 Meeting link</div>':''}
       <div class="sc-status" style="color:${isTaken?'var(--purple)':'var(--green)'}">
         ${isTaken?'● '+esc(b.name):'AVAILABLE'}
       </div>
-      ${isTaken ? `<div style="margin-top:4px">${statusBadge(status)}</div>
+      ${isTaken ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">${statusBadge(status)}${getHostConfirmBtnAdmin(b, s)}</div>
       ${pNote?`<div class="participant-note">📝 From participant: ${esc(pNote)}</div>`:''}
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
         <button class="btn-g btn-sm ${status==='completed'?'btn-status-active-completed':''}" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">${status==='completed'?'✓ Done ●':'✓ Done'}</button>
         <button class="btn-g btn-sm ${status==='missed'?'btn-status-active-missed':''}" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">${status==='missed'?'✗ Missed ●':'✗ Missed'}</button>
         ${status==='missed'?`<button class="btn-carry" style="font-size:9px;padding:3px 8px" onclick="carryForward('${b.id}','${s.id}')">↻ Carry Forward</button>`:''}
-        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Google</a>
-        <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Outlook</a>
-        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(slots.find(x=>x.id==='${s.id}'),'${esc(b.name)}')">📅 .ics</button>
+        ${calendarPopupBtn(s, b.name, 'slots')}
         ${link?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(link)}" target="_blank" rel="noopener">🔗 Join</a>`:''}
         <button class="btn-g btn-sm" style="font-size:9px;padding:4px 10px;color:var(--red);border-color:rgba(248,113,113,.3)" onclick="adminUnassignSlot('${b.id}','${s.id}')">Unassign</button>
       </div>
@@ -3433,13 +3552,10 @@ function renderBookingDayPanel(ds) {
           <div class="sc-status" style="color:${isMine?'var(--purple)':isTaken?'var(--text-dim)':'var(--green)'}">
             ${isMine?'● BOOKED':isTaken?'TAKEN':'AVAILABLE'}
           </div>
-          ${isMine?`${statusBadge(status)}
+          ${isMine?`${statusBadge(status)}${getHostConfirmBadge(p, s.id)}
           ${(status==='booked'||status==='confirmed') && !past?`<div style="margin-top:6px" onclick="event.stopPropagation()"><button class="btn-confirm" style="${status==='confirmed'?'background:rgba(34,197,94,.2);border-color:var(--green);color:var(--green)':''}" onclick="confirmAttendance('${s.id}')">${status==='confirmed'?'✓ Confirmed — tap to undo':'✓ Confirm Attendance'}</button></div>`:''}
-          <div class="sc-hint">Tap to cancel</div>
-          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
-            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,p.name)}" target="_blank" rel="noopener">📅 Google</a>
-            <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,p.name)}" target="_blank" rel="noopener">📅 Outlook</a>
-            <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px" onclick="downloadICS(bookingSlots.find(x=>x.id==='${s.id}'),'${esc(p.name)}')">📅 .ics</button>
+          <div onclick="event.stopPropagation()" style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            ${calendarPopupBtn(s, p.name, 'bookingSlots')}
             ${getMeetLink(s)?`<a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none;color:var(--cyan)" href="${esc(getMeetLink(s))}" target="_blank" rel="noopener">🔗 Join</a>`:''}
             <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--orange)" onclick="participantReschedule('${s.id}')">↻ Reschedule</button>
           </div>
@@ -3447,7 +3563,8 @@ function renderBookingDayPanel(ds) {
             <input class="note-input" placeholder="e.g. topics you'd like to cover" value="${esc(pNote)}" onblur="updateParticipantNote('${s.id}',this.value)" style="font-size:10px">
             <div style="font-family:var(--mono);font-size:8px;color:var(--text-dim);margin-top:2px">Add a note for your trainer (optional)</div>
           </div>
-          <div onclick="event.stopPropagation()" style="margin-top:6px">${getMediaBtn(s.id)}</div>`:''}
+          <div onclick="event.stopPropagation()" style="margin-top:6px">${getMediaBtn(s.id)}</div>
+          <div class="sc-hint" style="margin-top:4px">Tap to cancel</div>`:''}
         </div>`;
       }).join('')}
     </div>`;
@@ -3574,7 +3691,7 @@ async function enterCode() {
       // Also keep a full participants mirror so getBooker() works in booking view
       db.collection('participants').get().then(pSnap => {
         participants = pSnap.docs.map(d => ({id:d.id,...d.data()}));
-        bookingSlots = all.filter(s => !gid || s.groupId==='all' || s.groupId===gid);
+        bookingSlots = all.filter(s => !gid || s.groupId==='all' || s.groupId===gid || (s.groupIds && s.groupIds.includes(gid)));
         if (bookingSlots.length && !bookingCalDate) bookingCalDate = new Date(bookingSlots[0].date+'T12:00');
         renderBookingCal();
         if (bookingSelDate) renderBookingDayPanel(bookingSelDate);
@@ -3648,7 +3765,7 @@ function renderOverview() {
   const displayGroupIds = new Set(displayGroups.map(g => g.id));
 
   // Build filtered slots for stats
-  let filteredSlots = slots.filter(s => groupFilter === 'all' || s.groupId === groupFilter || s.groupId === 'all');
+  let filteredSlots = slots.filter(s => groupFilter === 'all' || s.groupId === groupFilter || s.groupId === 'all' || (s.groupIds && s.groupIds.includes(groupFilter)));
   if (fromDate) filteredSlots = filteredSlots.filter(s => s.date >= fromDate);
   if (toDate) filteredSlots = filteredSlots.filter(s => s.date <= toDate);
 
@@ -3682,7 +3799,7 @@ function renderOverview() {
   if (!slots.length) { oc.innerHTML=`<div class="empty"><div class="empty-icon">◇</div>No slots yet.</div>`; return; }
 
   let html = displayGroups.map(g => {
-    let gSlots = slots.filter(s => s.groupId===g.id || s.groupId==='all');
+    let gSlots = slots.filter(s => s.groupId===g.id || s.groupId==='all' || (s.groupIds && s.groupIds.includes(g.id)));
     // Apply date filters
     if (fromDate) gSlots = gSlots.filter(s => s.date >= fromDate);
     if (toDate) gSlots = gSlots.filter(s => s.date <= toDate);
@@ -3711,7 +3828,7 @@ function renderOverview() {
             <div class="ov-time">${fmtTime(s.time)}</div>
             ${s.label?`<div class="ov-lbl">${esc(s.label)}</div>`:''}
             <div class="ov-who" style="color:${b?'var(--purple)':'var(--green)'}">${b?esc(b.name):'Available'}</div>
-            ${b?statusBadge(status):''}
+            ${b?statusBadge(status):''}${b?dualConfirmBadge(b,s.id):''}
             ${notes?`<div class="note-display">${esc(notes)}</div>`:''}
             ${b?`<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
               <button class="btn-g btn-sm ${status==='completed'?'btn-status-active-completed':''}" style="font-size:8px;padding:2px 6px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓</button>
@@ -3788,9 +3905,24 @@ async function sendReminders(mode) {
     });
     const data = await resp.json();
     if (data.sent > 0) {
-      toast(`Sent ${data.sent} reminder${data.sent !== 1 ? 's' : ''}`);
+      // Build detailed feedback
+      const details = data.details || [];
+      if (details.length > 0) {
+        const first = details[0];
+        const nameStr = first.name || 'participant';
+        const emailStr = first.email ? ` (${first.email})` : '';
+        const dateStr = first.date || 'tomorrow';
+        const timeStr = first.time || '';
+        const isTomorrow = dateStr === new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0];
+        const summary = isTomorrow
+          ? `Reminder sent for tomorrow's session — ${nameStr}${emailStr} at ${timeStr}`
+          : `Reminder scheduled for ${nameStr}${emailStr} — ${dateStr} at ${timeStr}`;
+        toast(details.length === 1 ? summary : `${data.sent} reminders sent — including ${nameStr}${emailStr}`);
+      } else {
+        toast(`Sent ${data.sent} reminder${data.sent !== 1 ? 's' : ''} for tomorrow's sessions`);
+      }
     } else {
-      toast('No upcoming sessions to remind about');
+      toast(data.message || 'No upcoming sessions to remind about');
     }
   } catch(e) {
     toast('Error sending reminders', 'err');
@@ -4580,6 +4712,166 @@ async function updateMediaBadge(slotId) {
 
 function getMediaBtn(slotId) {
   return `<button class="slot-attach-btn" onclick="event.stopPropagation();openMediaPanel('${slotId}')" title="Session resources">📎 <span class="badge" data-media-badge="${slotId}" style="display:none"></span></button>`;
+}
+
+// ══════════════════════════════════════════════════════
+//  FEATURE 1 — Participant card infinity display
+// ══════════════════════════════════════════════════════
+// Already handled: participant rows show ∞ when sessionsAllocated === 0
+
+// ══════════════════════════════════════════════════════
+//  FEATURE 4 — Slot Group Chips display + slot visibility
+// ══════════════════════════════════════════════════════
+function renderSlotGroupChips(slot) {
+  if (slot.groupIds && slot.groupIds.length > 0) {
+    return `<div class="group-chips-display" style="margin-bottom:4px">${slot.groupIds.map(gid => {
+      const g = getGroup(gid);
+      if (!g) return '';
+      return `<span class="group-chip-mini" style="background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</span>`;
+    }).join('')}</div>`;
+  }
+  const g = getGroup(slot.groupId);
+  if (g && slot.groupId !== 'all') {
+    return `<div class="group-chip" style="font-size:10px;padding:2px 8px;margin-bottom:4px;background:${g.color}22;border:1px solid ${g.color}44;color:${g.color}">${esc(g.name)}</div>`;
+  }
+  return '';
+}
+
+// Slot visibility helper — checks both legacy groupId and new groupIds
+function isSlotVisibleToGroup(slot, groupId) {
+  if (!groupId) return true;
+  if (slot.groupId === 'all') return true;
+  if (slot.groupId === groupId) return true;
+  if (slot.groupIds && slot.groupIds.includes(groupId)) return true;
+  return false;
+}
+
+// ══════════════════════════════════════════════════════
+//  FEATURE 5 — Host/Admin Booking Confirmation
+// ══════════════════════════════════════════════════════
+function getHostConfirmed(participant, slotId) {
+  const entry = getSlotEntry(participant, slotId);
+  return entry ? !!entry.hostConfirmed : false;
+}
+
+function getHostConfirmBtnAdmin(booker, slot) {
+  const hc = getHostConfirmed(booker, slot.id);
+  return `<button class="host-confirm-btn${hc?' confirmed':''}" onclick="event.stopPropagation();toggleHostConfirm('${booker.id}','${slot.id}')" title="${hc?'Host confirmed — click to undo':'Click to confirm as host'}">${hc?'✓ Host':'◯ Host'}</button>`;
+}
+
+function getHostConfirmBadge(participant, slotId) {
+  const entry = getSlotEntry(participant, slotId);
+  if (!entry) return '';
+  const status = entry.status || 'booked';
+  const hc = !!entry.hostConfirmed;
+  const parts = [];
+  if (status === 'confirmed') parts.push('<span style="font-family:var(--mono);font-size:8px;color:var(--green);letter-spacing:1px">✓ Participant</span>');
+  if (hc) parts.push('<span style="font-family:var(--mono);font-size:8px;color:var(--cyan);letter-spacing:1px">✓ Host</span>');
+  if (!parts.length) return '';
+  return '<div style="display:flex;gap:6px;margin-top:2px">' + parts.join('') + '</div>';
+}
+
+async function toggleHostConfirm(pid, sid) {
+  const p = participants.find(x => x.id === pid);
+  if (!p) return;
+  const hc = getHostConfirmed(p, sid);
+  try {
+    await db.collection('participants').doc(pid).update({
+      bookedSlots: updateSlotEntry(p.bookedSlots, sid, { hostConfirmed: !hc })
+    });
+    toast(hc ? 'Host confirmation removed' : 'Host confirmed ✓');
+  } catch(e) { toast('Error updating', 'err'); }
+}
+
+// ══════════════════════════════════════════════════════
+//  FEATURE 6 — Session Type Detection
+// ══════════════════════════════════════════════════════
+function getSessionType(slot) {
+  // Default to 1-to-1 Session
+  // Could be enhanced later based on group session mode or slot capacity
+  return '1-to-1 Session';
+}
+
+// ══════════════════════════════════════════════════════
+//  FEATURE 8 — Supervisor Report (Send Now)
+// ══════════════════════════════════════════════════════
+async function sendSupReport() {
+  if (!supGroupId) { toast('No group selected', 'err'); return; }
+  const g = groups.find(x => x.id === supGroupId);
+  if (!g) { toast('Group not found', 'err'); return; }
+
+  // Check if supervisor email is stored
+  let supEmail = g.supervisorEmail || '';
+  if (!supEmail) {
+    supEmail = prompt('Enter your email address to receive the report:');
+    if (!supEmail || !supEmail.includes('@')) { toast('Valid email required', 'err'); return; }
+    // Save for future use
+    try {
+      await db.collection('groups').doc(supGroupId).update({ supervisorEmail: supEmail });
+    } catch(e) { /* non-critical */ }
+  }
+
+  toast('Generating report…');
+
+  // Gather data
+  const scoped = participants.filter(p => p.groupId === supGroupId);
+  const groupSlots = supSlots;
+  const booked = groupSlots.filter(s => getBooker(s.id));
+  const available = groupSlots.filter(s => !getBooker(s.id));
+  const completed = groupSlots.filter(s => { const b = getBooker(s.id); return b && getSlotStatus(b, s.id) === 'completed'; });
+  const missed = groupSlots.filter(s => { const b = getBooker(s.id); return b && getSlotStatus(b, s.id) === 'missed'; });
+  const unconfirmed = groupSlots.filter(s => { const b = getBooker(s.id); return b && (getSlotStatus(b, s.id) || 'booked') === 'booked'; });
+
+  // Upcoming sessions (future dates)
+  const today = todayStr();
+  const upcoming = groupSlots.filter(s => s.date >= today && getBooker(s.id)).sort((a,b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+
+  try {
+    const resp = await fetch(FUNCTIONS_BASE + '/sendSupervisorReport', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: supEmail,
+        groupName: g.name,
+        totalParticipants: scoped.length,
+        totalBooked: booked.length,
+        totalAvailable: available.length,
+        totalCompleted: completed.length,
+        totalMissed: missed.length,
+        totalUnconfirmed: unconfirmed.length,
+        upcoming: upcoming.slice(0, 10).map(s => {
+          const b = getBooker(s.id);
+          return {
+            date: s.date, time: s.time, label: s.label || '',
+            participant: b ? b.name : '',
+            status: b ? (getSlotStatus(b, s.id) || 'booked') : '',
+          };
+        }),
+      }),
+    });
+    if (resp.ok) {
+      toast(`Report sent to ${supEmail} ✓`);
+    } else {
+      const data = await resp.json();
+      toast('Failed to send report: ' + (data.error || 'Unknown error'), 'err');
+    }
+  } catch(e) {
+    toast('Error sending report', 'err');
+    console.error('Report error:', e);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  OVERVIEW — Dual confirmation display (Feature 5)
+// ══════════════════════════════════════════════════════
+function dualConfirmBadge(booker, slotId) {
+  if (!booker) return '';
+  const status = getSlotStatus(booker, slotId) || 'booked';
+  const hc = getHostConfirmed(booker, slotId);
+  const parts = [];
+  if (status === 'confirmed') parts.push('<span style="font-size:8px;color:var(--green)">✓ Participant</span>');
+  if (hc) parts.push('<span style="font-size:8px;color:var(--cyan)">✓ Host</span>');
+  return parts.length ? '<div style="display:flex;gap:4px;margin-top:2px">' + parts.join('') + '</div>' : '';
 }
 </script>
 </body>

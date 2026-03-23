@@ -352,15 +352,17 @@ exports.onBookingChange = onDocumentWritten(
             : "";
           const boundary = "boundary_" + Date.now();
           const bookingLogoUrl = "https://sean4e.github.io/4E_Scheduler/logo_WHT.png";
+          const sessionType = "1-to-1 Session"; // Feature 6: session type label
           const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
   <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 32px;display:flex;align-items:center;gap:16px">
     <img src="${bookingLogoUrl}" alt="4E" style="height:40px;width:auto" />
-    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">4E Workshop Session</h1>
+    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">4E Workshop — ${sessionType}</h1>
   </div>
   <div style="padding:24px 32px">
     <p style="font-size:16px;margin:0 0 8px">Hi <strong>${after.name}</strong>,</p>
-    <p style="color:#9d98be;margin:0 0 24px">Your session has been booked:</p>
+    <p style="color:#9d98be;margin:0 0 24px">Your ${sessionType.toLowerCase()} has been booked:</p>
     <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:18px;margin-bottom:20px">
+      <div style="font-size:10px;letter-spacing:2px;color:#fb923c;margin-bottom:6px">${sessionType.toUpperCase()}</div>
       <div style="font-size:18px;font-weight:bold;margin-bottom:6px">${eventTitle}</div>
       <div style="color:#a78bfa;font-size:14px;margin-bottom:4px">${dateStr}</div>
       <div style="color:#22d3ee;font-size:14px;margin-bottom:4px">${timeStr} · ${dur} minutes</div>
@@ -375,7 +377,7 @@ exports.onBookingChange = onDocumentWritten(
           const rawEmail = [
             `From: 4E Workshops <${organizerEmail}>`,
             `To: ${after.name} <${after.email}>`,
-            `Subject: =?UTF-8?B?${Buffer.from(eventTitle + " - " + dateStr).toString("base64")}?=`,
+            `Subject: =?UTF-8?B?${Buffer.from(sessionType + " — " + eventTitle + " - " + dateStr).toString("base64")}?=`,
             "MIME-Version: 1.0",
             `Content-Type: multipart/mixed; boundary="${boundary}"`,
             "",
@@ -385,7 +387,7 @@ exports.onBookingChange = onDocumentWritten(
             "--alt_" + boundary,
             "Content-Type: text/plain; charset=UTF-8",
             "",
-            `Hi ${after.name},\n\nYour session has been booked:\n${eventTitle}\n${dateStr} at ${timeStr} (${dur} min)\n${finalMeetLink ? "Join: " + finalMeetLink + "\n" : ""}${selfServiceInfo}\n\n— 4E Workshops`,
+            `Hi ${after.name},\n\nYour ${sessionType} has been booked:\n${eventTitle}\n${dateStr} at ${timeStr} (${dur} min)\n${finalMeetLink ? "Join: " + finalMeetLink + "\n" : ""}${selfServiceInfo}\n\n— 4E Workshops`,
             "",
             "--alt_" + boundary,
             "Content-Type: text/html; charset=UTF-8",
@@ -635,6 +637,7 @@ exports.sendReminders = onRequest({ region: REGION }, async (req, res) => {
     // Get all participants
     const partsSnap = await db.collection("participants").get();
     let sent = 0;
+    const details = []; // Feature 7: collect details for client feedback
 
     for (const pDoc of partsSnap.docs) {
       const p = pDoc.data();
@@ -715,12 +718,125 @@ exports.sendReminders = onRequest({ region: REGION }, async (req, res) => {
         });
         await db.collection("participants").doc(pDoc.id).update({ bookedSlots: updatedSlots });
         sent++;
+        details.push({ name: p.name, email: p.email, date: slot.date, time: timeStr });
       }
     }
 
-    res.json({ sent, message: `${sent} reminder${sent !== 1 ? "s" : ""} sent` });
+    res.json({ sent, message: `${sent} reminder${sent !== 1 ? "s" : ""} sent`, details });
   } catch (err) {
     console.error("Reminder error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════
+//  SUPERVISOR REPORT EMAIL (Feature 8)
+// ══════════════════════════════════════════════════════
+exports.sendSupervisorReport = onRequest({ region: REGION }, async (req, res) => {
+  if (!handleCors(req, res)) return;
+
+  const { email, groupName, totalParticipants, totalBooked, totalAvailable, totalCompleted, totalMissed, totalUnconfirmed, upcoming } = req.body;
+
+  if (!email) { res.status(400).json({ error: "No email provided" }); return; }
+
+  try {
+    const authDoc = await db.collection("config").doc("googleAuth").get();
+    if (!authDoc.exists || !authDoc.data().refreshToken) {
+      res.status(400).json({ error: "Google Calendar not connected" }); return;
+    }
+
+    const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+    oauth2.setCredentials({ refresh_token: authDoc.data().refreshToken });
+    const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Dublin" });
+
+    const upcomingRows = (upcoming || []).map(s => {
+      const d = new Date(s.date + "T12:00:00");
+      const dayStr = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+      const statusColors = { booked: "#a78bfa", confirmed: "#22d3ee", completed: "#34d399", missed: "#f87171" };
+      const sc = statusColors[s.status] || "#a78bfa";
+      return `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06);color:#9d98be;font-size:13px">${dayStr}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06);color:#22d3ee;font-size:13px;font-family:monospace">${s.time || ""}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06);color:#f0eeff;font-size:13px">${s.participant || ""}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px"><span style="background:${sc}22;color:${sc};padding:2px 8px;border-radius:4px;border:1px solid ${sc}44">${(s.status || "booked").toUpperCase()}</span></td>
+      </tr>`;
+    }).join("");
+
+    const logoUrl = "https://sean4e.github.io/4E_Scheduler/logo_WHT.png";
+    const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
+  <div style="background:linear-gradient(135deg,#34d399,#22d3ee);padding:24px 32px;display:flex;align-items:center;gap:16px">
+    <img src="${logoUrl}" alt="4E" style="height:40px;width:auto" />
+    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">Supervisor Report</h1>
+  </div>
+  <div style="padding:24px 32px">
+    <p style="font-size:16px;margin:0 0 8px"><strong>${groupName || "Workshop"}</strong></p>
+    <p style="color:#9d98be;margin:0 0 24px">${dateStr}</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px">
+      <div style="background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.2);border-radius:8px;padding:14px;text-align:center">
+        <div style="font-size:24px;font-weight:bold;color:#a78bfa">${totalParticipants || 0}</div>
+        <div style="font-size:11px;color:#9d98be">Participants</div>
+      </div>
+      <div style="background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2);border-radius:8px;padding:14px;text-align:center">
+        <div style="font-size:24px;font-weight:bold;color:#34d399">${totalBooked || 0}</div>
+        <div style="font-size:11px;color:#9d98be">Booked</div>
+      </div>
+      <div style="background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.2);border-radius:8px;padding:14px;text-align:center">
+        <div style="font-size:24px;font-weight:bold;color:#22d3ee">${totalAvailable || 0}</div>
+        <div style="font-size:11px;color:#9d98be">Available</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px">
+      <div style="background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:18px;font-weight:bold;color:#34d399">${totalCompleted || 0}</div>
+        <div style="font-size:10px;color:#9d98be">Completed</div>
+      </div>
+      <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:18px;font-weight:bold;color:#f87171">${totalMissed || 0}</div>
+        <div style="font-size:10px;color:#9d98be">Missed</div>
+      </div>
+      <div style="background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.2);border-radius:8px;padding:10px;text-align:center">
+        <div style="font-size:18px;font-weight:bold;color:#fb923c">${totalUnconfirmed || 0}</div>
+        <div style="font-size:10px;color:#9d98be">Unconfirmed</div>
+      </div>
+    </div>
+    ${upcomingRows ? `<div style="margin-bottom:20px">
+      <div style="font-size:12px;color:#22d3ee;letter-spacing:2px;margin-bottom:10px">UPCOMING SESSIONS</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr style="text-align:left">
+          <th style="padding:6px 12px;border-bottom:1px solid rgba(255,255,255,.1);font-size:10px;color:#4a4868;letter-spacing:1px">DATE</th>
+          <th style="padding:6px 12px;border-bottom:1px solid rgba(255,255,255,.1);font-size:10px;color:#4a4868;letter-spacing:1px">TIME</th>
+          <th style="padding:6px 12px;border-bottom:1px solid rgba(255,255,255,.1);font-size:10px;color:#4a4868;letter-spacing:1px">PARTICIPANT</th>
+          <th style="padding:6px 12px;border-bottom:1px solid rgba(255,255,255,.1);font-size:10px;color:#4a4868;letter-spacing:1px">STATUS</th>
+        </tr>
+        ${upcomingRows}
+      </table>
+    </div>` : ""}
+    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design · Workshop Scheduler</p>
+  </div>
+</div>`;
+
+    const subjectText = `Supervisor Report — ${groupName || "Workshop"} — ${dateStr}`;
+    const rawEmail = [
+      `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
+      `To: ${email}`,
+      `Subject: =?UTF-8?B?${Buffer.from(subjectText).toString("base64")}?=`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/html; charset=UTF-8",
+      "",
+      htmlBody,
+    ].join("\r\n");
+
+    const encoded = Buffer.from(rawEmail).toString("base64")
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+    await gmail.users.messages.send({ userId: "me", requestBody: { raw: encoded } });
+    console.log("Supervisor report sent to", email);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Supervisor report error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
