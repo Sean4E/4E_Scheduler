@@ -61,6 +61,7 @@
 <meta name="description" content="4E Workshop Scheduler — Book 1-to-1 sessions with ease">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apis.google.com/js/api.js" async defer></script>
@@ -324,6 +325,22 @@ input::placeholder{color:var(--text-dim)}
 /* status toggle active styles */
 .btn-status-active-completed{background:var(--green-dim)!important;border-color:rgba(52,211,153,.4)!important;color:var(--green)!important}
 .btn-status-active-missed{background:var(--red-dim)!important;border-color:rgba(248,113,113,.4)!important;color:var(--red)!important}
+.slot-attach-btn{background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:2px 8px;font-size:10px;cursor:pointer;font-family:var(--mono);display:inline-flex;align-items:center;gap:4px;transition:all .2s}
+.slot-attach-btn:hover{border-color:var(--purple);color:var(--purple)}
+.slot-attach-btn .badge{background:var(--purple);color:#fff;border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:8px}
+.media-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center}
+.media-panel{background:var(--glass);border:1px solid var(--border);border-radius:16px;width:90%;max-width:600px;max-height:85vh;overflow-y:auto;padding:24px;backdrop-filter:blur(20px)}
+.media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin:16px 0}
+.media-thumb{position:relative;border-radius:10px;overflow:hidden;aspect-ratio:1;cursor:pointer;border:1px solid var(--border)}
+.media-thumb img{width:100%;height:100%;object-fit:cover}
+.media-thumb .del-btn{position:absolute;top:4px;right:4px;background:rgba(239,68,68,.8);color:#fff;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:12px;display:none;align-items:center;justify-content:center}
+.media-thumb:hover .del-btn{display:flex}
+.media-drop{border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;color:var(--text-dim);cursor:pointer;transition:all .2s}
+.media-drop:hover,.media-drop.dragging{border-color:var(--purple);color:var(--purple)}
+.media-drop input{display:none}
+.media-note{width:100%;background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical;min-height:60px}
+.media-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.media-lightbox img{max-width:90%;max-height:90%;object-fit:contain;border-radius:8px}
 </style>
 </head>
 <body>
@@ -1148,6 +1165,7 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const storage = firebase.storage();
 
 // ══════════════════════════════════════════════════════
 //  PIN / AUTH STATE
@@ -2175,7 +2193,8 @@ function renderSupDayPanel(ds) {
       </div>
       <div onclick="event.stopPropagation()" style="margin-top:4px">
         <input class="note-input" placeholder="Add note…" value="${esc(notes)}" onchange="updateSlotNote('${b.id}','${s.id}',this.value)">
-      </div>` : `<div class="sc-hint">Click to assign</div>`}
+      </div>
+      <div onclick="event.stopPropagation()" style="margin-top:6px">${getMediaBtn(s.id)}</div>` : `<div class="sc-hint">Click to assign</div>`}
     </div>`;
   }).join('');
 
@@ -2301,12 +2320,14 @@ async function updateSlotNote(pid, sid, note) {
 async function confirmAttendance(sid) {
   const p = participants.find(x => x.id === currentPid);
   if (!p) return;
+  const current = getSlotStatus(p, sid) || 'booked';
+  const newStatus = current === 'confirmed' ? 'booked' : 'confirmed';
   try {
     await db.collection('participants').doc(currentPid).update({
-      bookedSlots: updateSlotEntry(p.bookedSlots, sid, { status: 'confirmed' })
+      bookedSlots: updateSlotEntry(p.bookedSlots, sid, { status: newStatus })
     });
-    toast('Attendance confirmed ✓');
-  } catch(e) { toast('Error confirming', 'err'); }
+    toast(newStatus === 'confirmed' ? 'Attendance confirmed ✓' : 'Confirmation removed');
+  } catch(e) { toast('Error updating', 'err'); }
 }
 
 function clearSupOverviewFilters() {
@@ -3296,6 +3317,7 @@ function renderAdminDayPanel(ds) {
         <input class="note-input" placeholder="Add note…" value="${esc(notes)}" onchange="updateSlotNote('${b.id}','${s.id}',this.value)">
       </div>` : `<div class="sc-hint">Click to assign</div>`}
       <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)" onclick="event.stopPropagation()">
+        ${getMediaBtn(s.id)}
         <span style="font-family:var(--mono);font-size:8px;color:var(--text-dim);letter-spacing:1px">🔗</span>
         <input type="text" value="${esc(s.meetingLink||'')}" placeholder="${g?.meetingLink?'Inherited from group':'Add meeting link…'}" style="flex:1;font-size:10px;padding:4px 8px;background:${s.meetingLink?'rgba(34,211,238,.06)':'rgba(255,255,255,.03)'}" onchange="updateSlotMeetLink('${s.id}',this.value)">
         <button class="btn-rm" style="font-size:14px" onclick="removeSlot('${s.id}')" title="Remove slot">×</button>
@@ -3402,7 +3424,7 @@ function renderBookingDayPanel(ds) {
             ${isMine?'● BOOKED':isTaken?'TAKEN':'AVAILABLE'}
           </div>
           ${isMine?`${statusBadge(status)}
-          ${status==='booked' && !past?`<div style="margin-top:6px" onclick="event.stopPropagation()"><button class="btn-confirm" onclick="confirmAttendance('${s.id}')">✓ Confirm Attendance</button></div>`:''}
+          ${(status==='booked'||status==='confirmed') && !past?`<div style="margin-top:6px" onclick="event.stopPropagation()"><button class="btn-confirm" style="${status==='confirmed'?'background:rgba(34,197,94,.2);border-color:var(--green);color:var(--green)':''}" onclick="confirmAttendance('${s.id}')">${status==='confirmed'?'✓ Confirmed — tap to undo':'✓ Confirm Attendance'}</button></div>`:''}
           <div class="sc-hint">Tap to cancel</div>
           <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
             <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,p.name)}" target="_blank" rel="noopener">📅 Google</a>
@@ -3414,7 +3436,8 @@ function renderBookingDayPanel(ds) {
           <div onclick="event.stopPropagation()" style="margin-top:6px">
             <input class="note-input" placeholder="e.g. topics you'd like to cover" value="${esc(pNote)}" onblur="updateParticipantNote('${s.id}',this.value)" style="font-size:10px">
             <div style="font-family:var(--mono);font-size:8px;color:var(--text-dim);margin-top:2px">Add a note for your trainer (optional)</div>
-          </div>`:''}
+          </div>
+          <div onclick="event.stopPropagation()" style="margin-top:6px">${getMediaBtn(s.id)}</div>`:''}
         </div>`;
       }).join('')}
     </div>`;
@@ -4407,6 +4430,147 @@ supQuickAssign = async function(sid) {
     }
   }
 };
+
+// ══════════════════════════════════════════════════════
+//  SLOT MEDIA — Images & Notes per slot
+// ══════════════════════════════════════════════════════
+let mediaSlotId = null;
+
+function openMediaPanel(slotId) {
+  mediaSlotId = slotId;
+  const slot = slots.find(s => s.id === slotId) || supSlots?.find(s => s.id === slotId);
+  const overlay = document.createElement('div');
+  overlay.className = 'media-overlay';
+  overlay.id = 'mediaOverlay';
+  overlay.onclick = e => { if (e.target === overlay) closeMediaPanel(); };
+
+  const slotLabel = slot ? `${fmtLong(slot.date)} · ${fmtTime(slot.time)}${slot.label ? ' · '+slot.label : ''}` : 'Slot';
+
+  overlay.innerHTML = `<div class="media-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <h3 style="margin:0;font-family:var(--heading);font-size:18px">Session Resources</h3>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">${slotLabel}</div>
+      </div>
+      <button class="btn-g" onclick="closeMediaPanel()" style="font-size:18px;padding:4px 10px">&times;</button>
+    </div>
+    <label style="display:block;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:6px">Notes</label>
+    <textarea class="media-note" id="mediaNote" placeholder="Add session notes..." onblur="saveMediaNote()">${esc(slot?.notes || '')}</textarea>
+    <label style="display:block;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin:16px 0 6px">Images</label>
+    <div id="mediaGrid" class="media-grid"></div>
+    <div class="media-drop" id="mediaDrop" onclick="document.getElementById('mediaFileInput').click()" ondragover="event.preventDefault();this.classList.add('dragging')" ondragleave="this.classList.remove('dragging')" ondrop="event.preventDefault();this.classList.remove('dragging');handleMediaDrop(event)">
+      <div style="font-size:24px;margin-bottom:6px">📷</div>
+      <div style="font-size:12px">Drop images here or click to upload</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Max 5MB per image</div>
+      <input type="file" id="mediaFileInput" accept="image/*" multiple onchange="handleMediaFiles(this.files)">
+    </div>
+    <div id="mediaUploadStatus" style="margin-top:8px;font-size:11px;color:var(--text-dim)"></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  loadMediaImages(slotId);
+}
+
+function closeMediaPanel() {
+  const o = document.getElementById('mediaOverlay');
+  if (o) o.remove();
+  mediaSlotId = null;
+}
+
+async function saveMediaNote() {
+  if (!mediaSlotId) return;
+  const note = document.getElementById('mediaNote')?.value || '';
+  try {
+    await db.collection('slots').doc(mediaSlotId).update({ notes: note });
+  } catch(e) { console.error('Error saving note:', e); }
+}
+
+async function loadMediaImages(slotId) {
+  const grid = document.getElementById('mediaGrid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="color:var(--text-dim);font-size:11px">Loading...</div>';
+  try {
+    const ref = storage.ref(`slots/${slotId}`);
+    const result = await ref.listAll();
+    if (!result.items.length) {
+      grid.innerHTML = '<div style="color:var(--text-dim);font-size:11px">No images yet</div>';
+      return;
+    }
+    const urls = await Promise.all(result.items.map(async item => ({
+      name: item.name,
+      url: await item.getDownloadURL(),
+      fullPath: item.fullPath,
+    })));
+    grid.innerHTML = urls.map(u => `<div class="media-thumb" onclick="openLightbox('${u.url}')">
+      <img src="${u.url}" alt="${esc(u.name)}" loading="lazy">
+      <button class="del-btn" onclick="event.stopPropagation();deleteMediaImage('${u.fullPath}')" title="Delete">&times;</button>
+    </div>`).join('');
+  } catch(e) {
+    grid.innerHTML = '<div style="color:var(--text-dim);font-size:11px">Could not load images</div>';
+    console.error('Error loading media:', e);
+  }
+}
+
+function handleMediaDrop(e) {
+  const files = e.dataTransfer?.files;
+  if (files) handleMediaFiles(files);
+}
+
+async function handleMediaFiles(files) {
+  if (!mediaSlotId || !files.length) return;
+  const status = document.getElementById('mediaUploadStatus');
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) { toast('Only images allowed', 'err'); continue; }
+    if (file.size > 5 * 1024 * 1024) { toast(`${file.name} is too large (max 5MB)`, 'err'); continue; }
+    const name = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const ref = storage.ref(`slots/${mediaSlotId}/${name}`);
+    if (status) status.textContent = `Uploading ${file.name}...`;
+    try {
+      await ref.put(file);
+      if (status) status.textContent = `${file.name} uploaded ✓`;
+    } catch(e) {
+      toast(`Failed to upload ${file.name}`, 'err');
+      console.error('Upload error:', e);
+    }
+  }
+  setTimeout(() => { if (status) status.textContent = ''; }, 2000);
+  loadMediaImages(mediaSlotId);
+  // Update the attach button badge count
+  updateMediaBadge(mediaSlotId);
+}
+
+async function deleteMediaImage(fullPath) {
+  if (!confirm('Delete this image?')) return;
+  try {
+    await storage.ref(fullPath).delete();
+    toast('Image deleted');
+    loadMediaImages(mediaSlotId);
+    updateMediaBadge(mediaSlotId);
+  } catch(e) { toast('Error deleting', 'err'); }
+}
+
+function openLightbox(url) {
+  const lb = document.createElement('div');
+  lb.className = 'media-lightbox';
+  lb.onclick = () => lb.remove();
+  lb.innerHTML = `<img src="${url}">`;
+  document.body.appendChild(lb);
+}
+
+async function updateMediaBadge(slotId) {
+  try {
+    const ref = storage.ref(`slots/${slotId}`);
+    const result = await ref.listAll();
+    const badges = document.querySelectorAll(`[data-media-badge="${slotId}"]`);
+    badges.forEach(b => {
+      b.textContent = result.items.length || '';
+      b.style.display = result.items.length ? '' : 'none';
+    });
+  } catch(e) {}
+}
+
+function getMediaBtn(slotId) {
+  return `<button class="slot-attach-btn" onclick="event.stopPropagation();openMediaPanel('${slotId}')" title="Session resources">📎 <span class="badge" data-media-badge="${slotId}" style="display:none"></span></button>`;
+}
 </script>
 </body>
 </html>
