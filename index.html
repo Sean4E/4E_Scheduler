@@ -1989,7 +1989,7 @@ async function supSaveEdit(id) {
   if (email) update.email = email; else update.email = firebase.firestore.FieldValue.delete();
   try {
     await db.collection('participants').doc(id).update(update);
-    supEditingId = null; toast('Updated ✓');
+    supEditingId = null; renderSupParticipants(); toast('Updated ✓');
   } catch(e) { toast('Error saving', 'err'); }
 }
 
@@ -2600,6 +2600,7 @@ async function saveGroupEdit(id) {
   try {
     await db.collection('groups').doc(id).update({ name, maxSlots, meetMode, allowSelfService, color });
     editingGroupId = null;
+    renderGroups();
     toast('Group updated ✓');
   } catch(e) { toast('Error saving group', 'err'); }
 }
@@ -2759,7 +2760,7 @@ async function saveEdit(id) {
   if (email) update.email = email; else update.email = firebase.firestore.FieldValue.delete();
   try {
     await db.collection('participants').doc(id).update(update);
-    editingId = null; toast('Updated ✓');
+    editingId = null; renderParticipants(); toast('Updated ✓');
   } catch(e) { toast('Error saving', 'err'); }
 }
 
