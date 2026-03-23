@@ -312,6 +312,18 @@ input::placeholder{color:var(--text-dim)}
 /* overlapping slot warning */
 .sc-overlap{border-color:rgba(251,146,60,.5)!important;box-shadow:0 0 8px rgba(251,146,60,.15)}
 .overlap-badge{font-family:var(--mono);font-size:8px;letter-spacing:1px;color:var(--orange);padding:2px 6px;border-radius:4px;background:var(--orange-dim);border:1px solid rgba(251,146,60,.2)}
+
+/* time picker pills */
+.time-pill-grid{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.time-pill{font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:16px;border:1px solid var(--border);background:var(--glass);color:var(--text-mid);cursor:pointer;transition:all .15s;white-space:nowrap;line-height:1.3}
+.time-pill:hover{background:var(--glass-mid);border-color:var(--border-hi);color:var(--text)}
+.time-pill.selected{background:var(--purple-dim);border-color:rgba(167,139,250,.5);color:var(--purple)}
+.time-pill-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text-dim);margin-bottom:4px}
+.custom-time-label{font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--text-dim);margin-top:6px;margin-bottom:2px}
+
+/* status toggle active styles */
+.btn-status-active-completed{background:var(--green-dim)!important;border-color:rgba(52,211,153,.4)!important;color:var(--green)!important}
+.btn-status-active-missed{background:var(--red-dim)!important;border-color:rgba(248,113,113,.4)!important;color:var(--red)!important}
 </style>
 </head>
 <body>
@@ -654,10 +666,15 @@ input::placeholder{color:var(--text-dim)}
             </div>
             <div id="form-single" class="sub-form" style="display:none">
               <h4>ADD SINGLE SLOT</h4>
+              <div style="margin-bottom:8px">
+                <div class="time-pill-label">QUICK TIME</div>
+                <div class="time-pill-grid" id="singleTimePills"></div>
+                <div class="custom-time-label">CUSTOM TIME</div>
+              </div>
               <div class="form-row">
                 <div class="inline-field">
                   <label>TIME</label>
-                  <input type="time" id="sTime" style="width:130px">
+                  <input type="time" id="sTime" style="width:130px" onchange="highlightTimePill('singleTimePills',this.value)">
                 </div>
                 <div class="inline-field">
                   <label>DURATION</label>
@@ -692,14 +709,21 @@ input::placeholder{color:var(--text-dim)}
             </div>
             <div id="form-block" class="sub-form" style="display:none">
               <h4>GENERATE TIME BLOCK</h4>
+              <div style="margin-bottom:8px">
+                <div class="time-pill-label">START TIME</div>
+                <div class="time-pill-grid" id="blockStartPills"></div>
+                <div class="time-pill-label" style="margin-top:8px">END TIME</div>
+                <div class="time-pill-grid" id="blockEndPills"></div>
+                <div class="custom-time-label">OR CUSTOM TIMES</div>
+              </div>
               <div class="form-row">
                 <div class="inline-field">
                   <label>START</label>
-                  <input type="time" id="bStart" oninput="previewBlock()" style="width:120px">
+                  <input type="time" id="bStart" oninput="highlightTimePill('blockStartPills',this.value);previewBlock()" style="width:120px">
                 </div>
                 <div class="inline-field">
                   <label>END</label>
-                  <input type="time" id="bEnd" oninput="previewBlock()" style="width:120px">
+                  <input type="time" id="bEnd" oninput="highlightTimePill('blockEndPills',this.value);previewBlock()" style="width:120px">
                 </div>
                 <div class="inline-field">
                   <label>SESSION</label>
@@ -2139,8 +2163,8 @@ function renderSupDayPanel(ds) {
       ${isTaken ? `<div style="margin-top:4px">${statusBadge(status)}</div>
       ${pNote?`<div class="participant-note">📝 From participant: ${esc(pNote)}</div>`:''}
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
-        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓ Done</button>
-        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗ Missed</button>
+        <button class="btn-g btn-sm ${status==='completed'?'btn-status-active-completed':''}" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">${status==='completed'?'✓ Done ●':'✓ Done'}</button>
+        <button class="btn-g btn-sm ${status==='missed'?'btn-status-active-missed':''}" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">${status==='missed'?'✗ Missed ●':'✗ Missed'}</button>
         ${status==='missed'?`<button class="btn-carry" style="font-size:9px;padding:3px 8px" onclick="carryForward('${b.id}','${s.id}')">↻ Carry Forward</button>`:''}
         <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Google</a>
         <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Outlook</a>
@@ -2237,11 +2261,15 @@ async function participantReschedule(sid) {
 async function markSlotStatus(pid, sid, status) {
   const p = participants.find(x => x.id === pid);
   if (!p) return;
+  // Toggle behavior: if already this status, revert to "booked"
+  const currentStatus = getSlotStatus(p, sid) || 'booked';
+  const newStatus = (currentStatus === status) ? 'booked' : status;
   try {
     await db.collection('participants').doc(pid).update({
-      bookedSlots: updateSlotEntry(p.bookedSlots, sid, { status })
+      bookedSlots: updateSlotEntry(p.bookedSlots, sid, { status: newStatus })
     });
-    toast(`Marked as ${status} ✓`);
+    if (newStatus === 'booked') toast('Reverted to booked');
+    else toast(`Marked as ${newStatus} ✓`);
   } catch(e) { toast('Error updating status', 'err'); }
 }
 
@@ -2335,8 +2363,8 @@ function renderSupOverview() {
         ${notes?`<div class="note-display">${esc(notes)}</div>`:''}
         ${s.meetingLink?'<span style="font-size:10px">🔗</span>':''}
         ${b?`<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
-          <button class="btn-g btn-sm" style="font-size:8px;padding:2px 6px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓</button>
-          <button class="btn-g btn-sm" style="font-size:8px;padding:2px 6px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗</button>
+          <button class="btn-g btn-sm ${status==='completed'?'btn-status-active-completed':''}" style="font-size:8px;padding:2px 6px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓</button>
+          <button class="btn-g btn-sm ${status==='missed'?'btn-status-active-missed':''}" style="font-size:8px;padding:2px 6px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗</button>
           ${status==='missed'?`<button class="btn-carry" style="font-size:8px;padding:2px 6px" onclick="carryForward('${b.id}','${s.id}')">↻</button>`:''}
         </div>`:''}
       </div>`;
@@ -2834,11 +2862,50 @@ function participantRow(p, color) {
 // ══════════════════════════════════════════════════════
 //  SLOTS — admin operations
 // ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+//  TIME PICKER PILLS
+// ══════════════════════════════════════════════════════
+const QUICK_TIMES = ['08:00','08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00'];
+
+function renderTimePills(containerId, inputId, extraCallback) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  wrap.innerHTML = QUICK_TIMES.map(t =>
+    `<div class="time-pill" data-time="${t}" onclick="pickTimePill('${containerId}','${inputId}','${t}'${extraCallback ? ','+extraCallback : ''})">${fmtTime(t)}</div>`
+  ).join('');
+}
+
+function pickTimePill(containerId, inputId, time, extraCallback) {
+  const input = document.getElementById(inputId);
+  if (input) input.value = time;
+  highlightTimePill(containerId, time);
+  if (extraCallback) extraCallback();
+}
+
+function highlightTimePill(containerId, time) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  wrap.querySelectorAll('.time-pill').forEach(p => {
+    p.classList.toggle('selected', p.dataset.time === time);
+  });
+}
+
 function showSubForm(type) {
   document.getElementById('form-single').style.display = type==='single' ? 'block' : 'none';
   document.getElementById('form-block').style.display  = type==='block'  ? 'block' : 'none';
-  if (type === 'block')  previewBlock();
-  if (type === 'single') setTimeout(() => document.getElementById('sTime').focus(), 50);
+  if (type === 'block') {
+    renderTimePills('blockStartPills', 'bStart', 'previewBlock');
+    renderTimePills('blockEndPills', 'bEnd', 'previewBlock');
+    // Highlight existing values
+    highlightTimePill('blockStartPills', document.getElementById('bStart').value);
+    highlightTimePill('blockEndPills', document.getElementById('bEnd').value);
+    previewBlock();
+  }
+  if (type === 'single') {
+    renderTimePills('singleTimePills', 'sTime');
+    highlightTimePill('singleTimePills', document.getElementById('sTime').value);
+    setTimeout(() => document.getElementById('sTime').focus(), 50);
+  }
 }
 
 // Check if a slot's date+time has overlapping slots in OTHER groups
@@ -3216,8 +3283,8 @@ function renderAdminDayPanel(ds) {
       ${isTaken ? `<div style="margin-top:4px">${statusBadge(status)}</div>
       ${pNote?`<div class="participant-note">📝 From participant: ${esc(pNote)}</div>`:''}
       <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap" onclick="event.stopPropagation()">
-        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓ Done</button>
-        <button class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗ Missed</button>
+        <button class="btn-g btn-sm ${status==='completed'?'btn-status-active-completed':''}" style="font-size:9px;padding:3px 8px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">${status==='completed'?'✓ Done ●':'✓ Done'}</button>
+        <button class="btn-g btn-sm ${status==='missed'?'btn-status-active-missed':''}" style="font-size:9px;padding:3px 8px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">${status==='missed'?'✗ Missed ●':'✗ Missed'}</button>
         ${status==='missed'?`<button class="btn-carry" style="font-size:9px;padding:3px 8px" onclick="carryForward('${b.id}','${s.id}')">↻ Carry Forward</button>`:''}
         <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${googleCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Google</a>
         <a class="btn-g btn-sm" style="font-size:9px;padding:3px 8px;text-decoration:none" href="${outlookCalURL(s,b.name)}" target="_blank" rel="noopener">📅 Outlook</a>
@@ -3614,8 +3681,8 @@ function renderOverview() {
             ${b?statusBadge(status):''}
             ${notes?`<div class="note-display">${esc(notes)}</div>`:''}
             ${b?`<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
-              <button class="btn-g btn-sm" style="font-size:8px;padding:2px 6px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓</button>
-              <button class="btn-g btn-sm" style="font-size:8px;padding:2px 6px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗</button>
+              <button class="btn-g btn-sm ${status==='completed'?'btn-status-active-completed':''}" style="font-size:8px;padding:2px 6px;color:var(--green)" onclick="markSlotStatus('${b.id}','${s.id}','completed')">✓</button>
+              <button class="btn-g btn-sm ${status==='missed'?'btn-status-active-missed':''}" style="font-size:8px;padding:2px 6px;color:var(--red)" onclick="markSlotStatus('${b.id}','${s.id}','missed')">✗</button>
               ${status==='missed'?`<button class="btn-carry" style="font-size:8px;padding:2px 6px" onclick="carryForward('${b.id}','${s.id}')">↻</button>`:''}
             </div>`:''}
           </div>`;

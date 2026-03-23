@@ -531,7 +531,7 @@ exports.sendWelcomeEmail = onRequest({ region: REGION }, async (req, res) => {
       <div style="font-family:monospace;font-size:28px;letter-spacing:5px;font-weight:bold;margin-bottom:12px">${code}</div>
       <a href="https://sean4e.github.io/4E_Scheduler/" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#22d3ee);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">Open Scheduler</a>
     </div>
-    ${allowSelfService ? '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">You can use your code to view your sessions and change your booking times.</p>' : '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">Use your code to view your upcoming sessions and meeting details.</p>'}
+    ${allowSelfService ? '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">You can use your code to view and manage your bookings. When your session is booked, you\'ll be able to reschedule from the scheduler.</p>' : '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">Your sessions will be scheduled for you. You\'ll receive a meeting invitation when your session is booked.</p>'}
     <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design . Workshop Scheduler</p>
   </div>
 </div>`;
