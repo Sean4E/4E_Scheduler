@@ -685,7 +685,7 @@ exports.sendReminders = onRequest({ region: REGION }, async (req, res) => {
 // ══════════════════════════════════════════════════════
 //  PIN VERIFICATION
 // ══════════════════════════════════════════════════════
-exports.verifyAdminPin = onRequest({ region: REGION, minInstances: 1 }, async (req, res) => {
+exports.verifyAdminPin = onRequest({ region: REGION }, async (req, res) => {
   if (!handleCors(req, res)) return;
   const { pin } = req.body;
   const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
@@ -716,7 +716,7 @@ exports.verifyAdminPin = onRequest({ region: REGION, minInstances: 1 }, async (r
   } catch (err) { res.status(500).json({ error: "Server error" }); }
 });
 
-exports.verifySupervisorPin = onRequest({ region: REGION, minInstances: 1 }, async (req, res) => {
+exports.verifySupervisorPin = onRequest({ region: REGION }, async (req, res) => {
   if (!handleCors(req, res)) return;
   const { pin } = req.body;
   const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
