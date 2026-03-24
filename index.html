@@ -376,14 +376,6 @@ input::placeholder{color:var(--text-dim)}
 .btn-role{background:transparent;border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-family:var(--mono);font-size:9px;letter-spacing:1px;cursor:pointer;transition:all .2s;color:var(--text-dim);white-space:nowrap}
 .btn-role:hover{border-color:var(--purple);color:var(--purple)}
 
-/* scheduled emails */
-.sched-email-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--glass);border:1px solid var(--border);margin-bottom:6px;font-size:11px;flex-wrap:wrap}
-.sched-email-row .sched-type{font-family:var(--mono);font-size:9px;letter-spacing:1px;padding:2px 6px;border-radius:4px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
-.sched-email-row .sched-time{font-family:var(--mono);font-size:10px;color:var(--cyan)}
-.sched-email-row .sched-status-sent{color:var(--green);font-family:var(--mono);font-size:9px;letter-spacing:1px}
-.sched-email-row .sched-status-cancelled{color:var(--red);font-family:var(--mono);font-size:9px;letter-spacing:1px;text-decoration:line-through}
-.btn-schedule{background:transparent;border:none;cursor:pointer;font-size:11px;color:var(--text-dim);padding:2px 6px;transition:color .2s;font-family:var(--mono);letter-spacing:0.5px;white-space:nowrap}
-.btn-schedule:hover{color:var(--cyan)}
 </style>
 </head>
 <body>
@@ -967,11 +959,6 @@ input::placeholder{color:var(--text-dim)}
               📨 Send to Individual
             </button>
           </div>
-        </div>
-        <div style="border-top:1px solid rgba(255,255,255,.06);padding-top:16px;margin-top:16px">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px;margin-bottom:10px">SCHEDULED EMAILS</div>
-          <div id="scheduledEmailsList" style="max-height:200px;overflow-y:auto"></div>
-          <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:6px">Schedule welcome emails via the participant list</div>
         </div>
       </div>
       <!-- ── INTEGRATIONS ── -->
@@ -2199,7 +2186,6 @@ function supParticipantRow(p, color) {
       : `<button class="btn-g btn-sm" onclick="supStartEdit('${p.id}')">Edit</button>`}
     <div class="code-pill" onclick="copyCode('${p.id}')" title="Click to copy">${p.id}</div>
     ${p.email ? `<button onclick="supSendWelcome('${p.id}')" title="Send welcome email" style="background:none;border:none;cursor:pointer;font-size:14px;padding:4px">\uD83D\uDCE8</button>` : ''}
-    ${p.email ? `<button class="btn-schedule" onclick="scheduleWelcomeEmail('${p.id}')" title="Schedule welcome email">\u23F0</button>` : ''}
     <button class="btn-rm" onclick="supRemoveParticipant('${p.id}')">×</button>
   </div>`;
 }
@@ -3053,7 +3039,6 @@ function participantRow(p, color) {
       : `<button class="btn-g btn-sm" onclick="startEdit('${p.id}')">Edit</button>
          <button class="btn-role" onclick="toggleRole('${p.id}')" title="${isSup?'Demote to participant':'Promote to supervisor'}">${isSup?'\u2605 Demote':'\u2606 Promote'}</button>`}
     <div class="code-pill" onclick="copyCode('${p.id}')" title="Click to copy">${p.id}</div>
-    ${p.email ? `<button class="btn-schedule" onclick="scheduleWelcomeEmail('${p.id}')" title="Schedule welcome email">\u23F0</button>` : ''}
     ${p.email && isSup ? `<button onclick="sendSupervisorWelcome('${p.id}')" title="Send supervisor welcome" style="background:none;border:1px solid rgba(251,191,36,.3);border-radius:6px;cursor:pointer;font-size:10px;padding:3px 8px;color:#fbbf24;font-family:var(--mono)">\u2605 Sup Welcome</button>` : ''}
     <button class="btn-rm" onclick="removeParticipant('${p.id}')">×</button>
   </div>`;
@@ -4998,124 +4983,6 @@ async function sendSupervisorWelcome(participantId) {
   } catch(e) { toast('Error sending supervisor welcome', 'err'); }
 }
 
-// ══════════════════════════════════════════════════════
-//  SCHEDULED EMAILS
-// ══════════════════════════════════════════════════════
-let scheduledEmails = [];
-let unsubScheduledEmails = null;
-
-function startScheduledEmailsListener() {
-  if (unsubScheduledEmails) return;
-  unsubScheduledEmails = db.collection('scheduledEmails')
-    .orderBy('scheduledAt', 'asc')
-    .onSnapshot(snap => {
-      scheduledEmails = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderScheduledEmails();
-    }, err => console.error('scheduledEmails listener:', err));
-}
-
-function stopScheduledEmailsListener() {
-  if (unsubScheduledEmails) { unsubScheduledEmails(); unsubScheduledEmails = null; }
-}
-
-function renderScheduledEmails() {
-  const el = document.getElementById('scheduledEmailsList');
-  if (!el) return;
-  const pending = scheduledEmails.filter(e => e.status === 'pending');
-  const recent = scheduledEmails.filter(e => e.status === 'sent' || e.status === 'cancelled').slice(-5);
-  if (!pending.length && !recent.length) {
-    el.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:4px 0">No scheduled emails</div>';
-    return;
-  }
-  let html = '';
-  for (const se of pending) {
-    const p = participants.find(x => x.id === se.participantId);
-    const name = p ? p.name : se.participantId;
-    const typeLabel = se.type === 'supervisorWelcome' ? 'SUP WELCOME' : se.type === 'reminder' ? 'REMINDER' : 'WELCOME';
-    const schedAt = se.scheduledAt && se.scheduledAt.toDate ? se.scheduledAt.toDate() : new Date(se.scheduledAt);
-    const timeStr = schedAt.toLocaleDateString('en-GB', { day:'numeric', month:'short' }) + ' ' + schedAt.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
-    html += `<div class="sched-email-row">
-      <span class="sched-type">${typeLabel}</span>
-      <span style="flex:1;color:var(--text)">${esc(name)}</span>
-      <span class="sched-time">${timeStr}</span>
-      <button class="btn-rm" onclick="cancelScheduledEmail('${se.id}')" title="Cancel" style="font-size:14px">\u00D7</button>
-    </div>`;
-  }
-  for (const se of recent) {
-    const p = participants.find(x => x.id === se.participantId);
-    const name = p ? p.name : se.participantId;
-    const isSent = se.status === 'sent';
-    html += `<div class="sched-email-row" style="opacity:.5">
-      <span class="sched-type">${se.type === 'supervisorWelcome' ? 'SUP' : 'WELCOME'}</span>
-      <span style="flex:1;color:var(--text)">${esc(name)}</span>
-      <span class="${isSent ? 'sched-status-sent' : 'sched-status-cancelled'}">${isSent ? 'SENT' : 'CANCELLED'}</span>
-    </div>`;
-  }
-  el.innerHTML = html;
-}
-
-async function scheduleWelcomeEmail(participantId) {
-  const p = participants.find(x => x.id === participantId);
-  if (!p || !p.email) { toast('No email for this participant', 'err'); return; }
-
-  const isSup = p.role === 'supervisor';
-  const group = groups.find(g => g.id === p.groupId);
-
-  // Create a datetime-local input via prompt
-  const now = new Date();
-  const defaultDT = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
-  const dtStr = prompt(
-    `Schedule ${isSup ? 'supervisor ' : ''}welcome email for ${p.name}.\n\nEnter date and time (YYYY-MM-DD HH:MM):`,
-    defaultDT.getFullYear() + '-' + String(defaultDT.getMonth()+1).padStart(2,'0') + '-' + String(defaultDT.getDate()).padStart(2,'0') + ' ' + String(defaultDT.getHours()).padStart(2,'0') + ':' + String(defaultDT.getMinutes()).padStart(2,'0')
-  );
-  if (!dtStr) return;
-
-  const parsed = new Date(dtStr.replace(' ', 'T'));
-  if (isNaN(parsed.getTime())) { toast('Invalid date/time format', 'err'); return; }
-  if (parsed <= new Date()) { toast('Scheduled time must be in the future', 'err'); return; }
-
-  let supervisorPin = null;
-  if (isSup) {
-    supervisorPin = prompt('Enter the supervisor PIN for ' + (group?.name || 'the group') + ':');
-    if (!supervisorPin || supervisorPin.length !== 4) { toast('A valid 4-digit PIN is required for supervisor welcome', 'err'); return; }
-  }
-
-  try {
-    const data = {
-      type: isSup ? 'supervisorWelcome' : 'welcome',
-      participantId: p.id,
-      groupId: p.groupId || null,
-      scheduledAt: firebase.firestore.Timestamp.fromDate(parsed),
-      status: 'pending',
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      createdBy: adminAuthed ? 'admin' : 'supervisor',
-    };
-    if (supervisorPin) data.supervisorPin = supervisorPin;
-    await db.collection('scheduledEmails').add(data);
-    toast(`Email scheduled for ${parsed.toLocaleDateString('en-GB')} ${parsed.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'})}`);
-  } catch(e) { toast('Error scheduling email', 'err'); console.error(e); }
-}
-
-async function cancelScheduledEmail(id) {
-  if (!confirm('Cancel this scheduled email?')) return;
-  try {
-    await db.collection('scheduledEmails').doc(id).update({ status: 'cancelled' });
-    toast('Scheduled email cancelled');
-  } catch(e) { toast('Error cancelling', 'err'); }
-}
-
-// Hook into admin listeners to start scheduled emails listener
-const _origStartAdminListeners2 = startAdminListeners;
-startAdminListeners = function() {
-  _origStartAdminListeners2();
-  startScheduledEmailsListener();
-};
-
-const _origStopAdminListeners = typeof stopAdminListeners === 'function' ? stopAdminListeners : null;
-if (_origStopAdminListeners) {
-  const _origStop = stopAdminListeners;
-  stopAdminListeners = function() { _origStop(); stopScheduledEmailsListener(); };
-}
 </script>
 </body>
 </html>
