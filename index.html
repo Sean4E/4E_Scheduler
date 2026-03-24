@@ -27,6 +27,9 @@
 ║      match /participants/{id} {                                  ║
 ║        allow read, write: if true;                               ║
 ║      }                                                           ║
+║      match /scheduledEmails/{id} {                               ║
+║        allow read, write: if true;                               ║
+║      }                                                           ║
 ║    }                                                             ║
 ║  }                                                               ║
 ║                                                                  ║
@@ -366,6 +369,21 @@ input::placeholder{color:var(--text-dim)}
 
 /* block success message */
 .block-success{background:var(--green-dim);border:1px solid rgba(52,211,153,.25);border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12px;color:var(--green);font-family:var(--syne);animation:fadeIn .2s ease}
+
+/* supervisor role badge */
+.role-badge-sup{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:9px;letter-spacing:1px;padding:2px 8px;border-radius:10px;background:linear-gradient(135deg,rgba(167,139,250,.15),rgba(251,191,36,.12));border:1px solid rgba(251,191,36,.3);color:#fbbf24;white-space:nowrap}
+.p-row-supervisor{background:rgba(167,139,250,.04)!important;border-color:rgba(167,139,250,.15)!important}
+.btn-role{background:transparent;border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-family:var(--mono);font-size:9px;letter-spacing:1px;cursor:pointer;transition:all .2s;color:var(--text-dim);white-space:nowrap}
+.btn-role:hover{border-color:var(--purple);color:var(--purple)}
+
+/* scheduled emails */
+.sched-email-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--glass);border:1px solid var(--border);margin-bottom:6px;font-size:11px;flex-wrap:wrap}
+.sched-email-row .sched-type{font-family:var(--mono);font-size:9px;letter-spacing:1px;padding:2px 6px;border-radius:4px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(167,139,250,.2)}
+.sched-email-row .sched-time{font-family:var(--mono);font-size:10px;color:var(--cyan)}
+.sched-email-row .sched-status-sent{color:var(--green);font-family:var(--mono);font-size:9px;letter-spacing:1px}
+.sched-email-row .sched-status-cancelled{color:var(--red);font-family:var(--mono);font-size:9px;letter-spacing:1px;text-decoration:line-through}
+.btn-schedule{background:transparent;border:none;cursor:pointer;font-size:11px;color:var(--text-dim);padding:2px 6px;transition:color .2s;font-family:var(--mono);letter-spacing:0.5px;white-space:nowrap}
+.btn-schedule:hover{color:var(--cyan)}
 </style>
 </head>
 <body>
@@ -950,6 +968,11 @@ input::placeholder{color:var(--text-dim)}
             </button>
           </div>
         </div>
+        <div style="border-top:1px solid rgba(255,255,255,.06);padding-top:16px;margin-top:16px">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-mid);letter-spacing:2px;margin-bottom:10px">SCHEDULED EMAILS</div>
+          <div id="scheduledEmailsList" style="max-height:200px;overflow-y:auto"></div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:6px">Schedule welcome emails via the participant list</div>
+        </div>
       </div>
       <!-- ── INTEGRATIONS ── -->
       <div class="card" style="padding:24px;max-width:600px;margin-bottom:20px">
@@ -1403,14 +1426,14 @@ async function adminSendWelcomeToFilteredGroup() {
   const gf = adminParticipantGroupFilter || 'all';
   let targets;
   if (gf === 'all') {
-    targets = participants.filter(p => p.email);
+    targets = participants.filter(p => p.email && p.role !== 'supervisor');
     if (!targets.length) { toast('No participants with email addresses', 'err'); return; }
   } else {
-    targets = participants.filter(p => p.groupId === gf && p.email);
+    targets = participants.filter(p => p.groupId === gf && p.email && p.role !== 'supervisor');
     if (!targets.length) { toast('No participants with email in this group', 'err'); return; }
   }
   const groupLabel = gf === 'all' ? 'all groups' : (getGroup(gf)?.name || 'this group');
-  if (!confirm(`Send welcome email to ${targets.length} participant${targets.length !== 1 ? 's' : ''} in ${groupLabel}?`)) return;
+  if (!confirm(`Send welcome email to ${targets.length} participant${targets.length !== 1 ? 's' : ''} in ${groupLabel}?\n(Supervisors are excluded — use the Sup Welcome button for them.)`)) return;
   toast(`Sending ${targets.length} welcome email${targets.length !== 1 ? 's' : ''}\u2026`);
   let sent = 0;
   for (const p of targets) {
@@ -2075,7 +2098,7 @@ async function supAddParticipant() {
   const gid   = supGroupId || document.getElementById('supPGroup').value || null;
   if (!name) return;
   const id = uid();
-  const data = { name, sessionsAllocated: n, bookedSlots: [], groupId: gid };
+  const data = { name, sessionsAllocated: n, bookedSlots: [], groupId: gid, role: 'participant' };
   if (email) data.email = email;
   try {
     await db.collection('participants').doc(id).set(data);
@@ -2126,6 +2149,13 @@ function renderSupParticipants() {
   }
   const g = groups.find(x => x.id === supGroupId);
   const color = g ? g.color : 'var(--text-dim)';
+  // Sort: supervisors first (alphabetical), then participants (alphabetical)
+  scopedParticipants.sort((a, b) => {
+    const aIsSup = (a.role === 'supervisor') ? 0 : 1;
+    const bIsSup = (b.role === 'supervisor') ? 0 : 1;
+    if (aIsSup !== bIsSup) return aIsSup - bIsSup;
+    return a.name.localeCompare(b.name);
+  });
   let html = '';
   if (g) {
     const withEmail = scopedParticipants.filter(p => p.email).length;
@@ -2146,10 +2176,11 @@ function supParticipantRow(p, color) {
   const pct = unlimited ? 0 : Math.min(100, (bc / p.sessionsAllocated) * 100);
   const full = !unlimited && pct >= 100;
   const isEd = supEditingId === p.id;
-  return `<div class="card p-row">
-    <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${esc(p.name[0].toUpperCase())}</div>
+  const isSup = p.role === 'supervisor';
+  return `<div class="card p-row${isSup ? ' p-row-supervisor' : ''}">
+    <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${isSup ? '\u2605' : esc(p.name[0].toUpperCase())}</div>
     <div class="p-info">
-      <div class="p-name">${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
+      <div class="p-name">${isSup ? '<span class="role-badge-sup">\u2605 SUPERVISOR</span> ' : ''}${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
       <div class="prog-wrap">
         ${unlimited ? '' : `<div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>`}
         <span class="p-stat">${unlimited ? bc + '/\u221E' : bc + '/' + p.sessionsAllocated}</span>
@@ -2167,7 +2198,8 @@ function supParticipantRow(p, color) {
          </div>`
       : `<button class="btn-g btn-sm" onclick="supStartEdit('${p.id}')">Edit</button>`}
     <div class="code-pill" onclick="copyCode('${p.id}')" title="Click to copy">${p.id}</div>
-    ${p.email ? `<button onclick="supSendWelcome('${p.id}')" title="Send welcome email" style="background:none;border:none;cursor:pointer;font-size:14px;padding:4px">📨</button>` : ''}
+    ${p.email ? `<button onclick="supSendWelcome('${p.id}')" title="Send welcome email" style="background:none;border:none;cursor:pointer;font-size:14px;padding:4px">\uD83D\uDCE8</button>` : ''}
+    ${p.email ? `<button class="btn-schedule" onclick="scheduleWelcomeEmail('${p.id}')" title="Schedule welcome email">\u23F0</button>` : ''}
     <button class="btn-rm" onclick="supRemoveParticipant('${p.id}')">×</button>
   </div>`;
 }
@@ -2901,7 +2933,7 @@ async function addParticipant() {
   const gid   = document.getElementById('pGroup').value || null;
   if (!name) return;
   const id = uid();
-  const data = { name, sessionsAllocated: n, bookedSlots: [], groupId: gid };
+  const data = { name, sessionsAllocated: n, bookedSlots: [], groupId: gid, role: 'participant' };
   if (email) data.email = email;
   try {
     await db.collection('participants').doc(id).set(data);
@@ -2932,8 +2964,10 @@ async function saveEdit(id) {
   const email = document.getElementById('editEmail_'+id).value.trim();
   const rawV  = document.getElementById('editVal_'+id).value;
   const v     = rawV === '' ? 0 : (parseInt(rawV) || 0);
+  const roleEl = document.getElementById('editRole_'+id);
+  const role  = roleEl ? roleEl.value : 'participant';
   if (!name) { toast('Name is required', 'err'); return; }
-  const update = { name, sessionsAllocated: v };
+  const update = { name, sessionsAllocated: v, role };
   if (email) update.email = email; else update.email = firebase.firestore.FieldValue.delete();
   try {
     await db.collection('participants').doc(id).update(update);
@@ -2958,6 +2992,15 @@ function renderParticipants() {
   }
   const byGroup = {};
   filteredParticipantsList.forEach(p => { const k = p.groupId || '__none'; if (!byGroup[k]) byGroup[k]=[]; byGroup[k].push(p); });
+  // Sort each group: supervisors first (alphabetical), then participants (alphabetical)
+  Object.keys(byGroup).forEach(k => {
+    byGroup[k].sort((a, b) => {
+      const aIsSup = (a.role === 'supervisor') ? 0 : 1;
+      const bIsSup = (b.role === 'supervisor') ? 0 : 1;
+      if (aIsSup !== bIsSup) return aIsSup - bIsSup;
+      return a.name.localeCompare(b.name);
+    });
+  });
   let html = '';
   groups.forEach(g => {
     const ps = byGroup[g.id] || [];
@@ -2983,10 +3026,11 @@ function participantRow(p, color) {
   const pct = unlimited ? 0 : Math.min(100, (bc / p.sessionsAllocated) * 100);
   const full = !unlimited && pct >= 100;
   const isEd = editingId === p.id;
-  return `<div class="card p-row">
-    <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${esc(p.name[0].toUpperCase())}</div>
+  const isSup = p.role === 'supervisor';
+  return `<div class="card p-row${isSup ? ' p-row-supervisor' : ''}">
+    <div class="avatar" style="background:${color}22;border:1px solid ${color}44;color:${color}">${isSup ? '\u2605' : esc(p.name[0].toUpperCase())}</div>
     <div class="p-info">
-      <div class="p-name">${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
+      <div class="p-name">${isSup ? '<span class="role-badge-sup">\u2605 SUPERVISOR</span> ' : ''}${esc(p.name)}${p.email?`<span style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-left:8px">${esc(p.email)}</span>`:''}</div>
       <div class="prog-wrap">
         ${unlimited ? '' : `<div class="prog-bar"><div class="prog-fill${full?' full':''}" style="width:${pct}%"></div></div>`}
         <span class="p-stat">${unlimited ? bc + '/\u221E' : bc + '/' + p.sessionsAllocated}</span>
@@ -2999,11 +3043,18 @@ function participantRow(p, color) {
            <input type="text" id="editName_${p.id}" value="${esc(p.name)}" placeholder="Name" style="width:140px;padding:6px 10px">
            <input type="email" id="editEmail_${p.id}" value="${esc(p.email||'')}" placeholder="Email" style="width:180px;padding:6px 10px">
            <input type="number" id="editVal_${p.id}" min="0" max="20" value="${p.sessionsAllocated || ''}" style="width:60px;padding:6px 10px" title="Sessions (empty = unlimited)" placeholder="&#8734;">
+           <select id="editRole_${p.id}" style="width:110px;padding:6px 10px;font-size:11px">
+             <option value="participant"${!isSup?' selected':''}>Participant</option>
+             <option value="supervisor"${isSup?' selected':''}>Supervisor</option>
+           </select>
            <button class="btn-p btn-sm" onclick="saveEdit('${p.id}')">Save</button>
            <button class="btn-g btn-sm" onclick="cancelEdit()">✕</button>
          </div>`
-      : `<button class="btn-g btn-sm" onclick="startEdit('${p.id}')">Edit</button>`}
+      : `<button class="btn-g btn-sm" onclick="startEdit('${p.id}')">Edit</button>
+         <button class="btn-role" onclick="toggleRole('${p.id}')" title="${isSup?'Demote to participant':'Promote to supervisor'}">${isSup?'\u2605 Demote':'\u2606 Promote'}</button>`}
     <div class="code-pill" onclick="copyCode('${p.id}')" title="Click to copy">${p.id}</div>
+    ${p.email ? `<button class="btn-schedule" onclick="scheduleWelcomeEmail('${p.id}')" title="Schedule welcome email">\u23F0</button>` : ''}
+    ${p.email && isSup ? `<button onclick="sendSupervisorWelcome('${p.id}')" title="Send supervisor welcome" style="background:none;border:1px solid rgba(251,191,36,.3);border-radius:6px;cursor:pointer;font-size:10px;padding:3px 8px;color:#fbbf24;font-family:var(--mono)">\u2605 Sup Welcome</button>` : ''}
     <button class="btn-rm" onclick="removeParticipant('${p.id}')">×</button>
   </div>`;
 }
@@ -4896,6 +4947,174 @@ function dualConfirmBadge(booker, slotId) {
   if (status === 'confirmed') parts.push('<span style="font-size:8px;color:var(--green)">✓ Participant</span>');
   if (hc) parts.push('<span style="font-size:8px;color:var(--cyan)">✓ Host</span>');
   return parts.length ? '<div style="display:flex;gap:4px;margin-top:2px">' + parts.join('') + '</div>' : '';
+}
+
+// ══════════════════════════════════════════════════════
+//  SUPERVISOR ROLE — Toggle, promote/demote
+// ══════════════════════════════════════════════════════
+async function toggleRole(id) {
+  const p = participants.find(x => x.id === id);
+  if (!p) return;
+  const currentRole = p.role || 'participant';
+  const newRole = currentRole === 'supervisor' ? 'participant' : 'supervisor';
+  const action = newRole === 'supervisor' ? 'Promote' : 'Demote';
+  if (!confirm(`${action} "${p.name}" to ${newRole}?`)) return;
+  try {
+    await db.collection('participants').doc(id).update({ role: newRole });
+    toast(`${p.name} is now a ${newRole}`);
+  } catch(e) { toast('Error updating role', 'err'); }
+}
+
+// ══════════════════════════════════════════════════════
+//  SUPERVISOR WELCOME EMAIL
+// ══════════════════════════════════════════════════════
+async function sendSupervisorWelcome(participantId) {
+  const p = participants.find(x => x.id === participantId);
+  if (!p || !p.email) { toast('No email address for this participant', 'err'); return; }
+  if (p.role !== 'supervisor') { toast('Participant is not a supervisor', 'err'); return; }
+
+  const group = groups.find(g => g.id === p.groupId);
+  if (!group) { toast('Participant has no group assigned', 'err'); return; }
+
+  const pin = prompt('Enter the supervisor PIN for ' + group.name + '.\nThis will be included in the welcome email.');
+  if (!pin || pin.length !== 4) { toast('A valid 4-digit PIN is required', 'err'); return; }
+  if (!confirm(`Send supervisor welcome email to ${p.name} (${p.email}) with PIN ${pin}?`)) return;
+
+  try {
+    toast('Sending supervisor welcome\u2026');
+    const resp = await fetch(FUNCTIONS_BASE + '/sendSupervisorWelcome', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        participantId: p.id,
+        participantName: p.name,
+        participantEmail: p.email,
+        groupName: group.name,
+        supervisorPin: pin,
+      }),
+    });
+    if (resp.ok) toast(`Supervisor welcome sent to ${p.name}`);
+    else { const data = await resp.json(); toast('Failed: ' + (data.error || 'Unknown'), 'err'); }
+  } catch(e) { toast('Error sending supervisor welcome', 'err'); }
+}
+
+// ══════════════════════════════════════════════════════
+//  SCHEDULED EMAILS
+// ══════════════════════════════════════════════════════
+let scheduledEmails = [];
+let unsubScheduledEmails = null;
+
+function startScheduledEmailsListener() {
+  if (unsubScheduledEmails) return;
+  unsubScheduledEmails = db.collection('scheduledEmails')
+    .orderBy('scheduledAt', 'asc')
+    .onSnapshot(snap => {
+      scheduledEmails = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderScheduledEmails();
+    }, err => console.error('scheduledEmails listener:', err));
+}
+
+function stopScheduledEmailsListener() {
+  if (unsubScheduledEmails) { unsubScheduledEmails(); unsubScheduledEmails = null; }
+}
+
+function renderScheduledEmails() {
+  const el = document.getElementById('scheduledEmailsList');
+  if (!el) return;
+  const pending = scheduledEmails.filter(e => e.status === 'pending');
+  const recent = scheduledEmails.filter(e => e.status === 'sent' || e.status === 'cancelled').slice(-5);
+  if (!pending.length && !recent.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:4px 0">No scheduled emails</div>';
+    return;
+  }
+  let html = '';
+  for (const se of pending) {
+    const p = participants.find(x => x.id === se.participantId);
+    const name = p ? p.name : se.participantId;
+    const typeLabel = se.type === 'supervisorWelcome' ? 'SUP WELCOME' : se.type === 'reminder' ? 'REMINDER' : 'WELCOME';
+    const schedAt = se.scheduledAt && se.scheduledAt.toDate ? se.scheduledAt.toDate() : new Date(se.scheduledAt);
+    const timeStr = schedAt.toLocaleDateString('en-GB', { day:'numeric', month:'short' }) + ' ' + schedAt.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+    html += `<div class="sched-email-row">
+      <span class="sched-type">${typeLabel}</span>
+      <span style="flex:1;color:var(--text)">${esc(name)}</span>
+      <span class="sched-time">${timeStr}</span>
+      <button class="btn-rm" onclick="cancelScheduledEmail('${se.id}')" title="Cancel" style="font-size:14px">\u00D7</button>
+    </div>`;
+  }
+  for (const se of recent) {
+    const p = participants.find(x => x.id === se.participantId);
+    const name = p ? p.name : se.participantId;
+    const isSent = se.status === 'sent';
+    html += `<div class="sched-email-row" style="opacity:.5">
+      <span class="sched-type">${se.type === 'supervisorWelcome' ? 'SUP' : 'WELCOME'}</span>
+      <span style="flex:1;color:var(--text)">${esc(name)}</span>
+      <span class="${isSent ? 'sched-status-sent' : 'sched-status-cancelled'}">${isSent ? 'SENT' : 'CANCELLED'}</span>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+async function scheduleWelcomeEmail(participantId) {
+  const p = participants.find(x => x.id === participantId);
+  if (!p || !p.email) { toast('No email for this participant', 'err'); return; }
+
+  const isSup = p.role === 'supervisor';
+  const group = groups.find(g => g.id === p.groupId);
+
+  // Create a datetime-local input via prompt
+  const now = new Date();
+  const defaultDT = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour from now
+  const dtStr = prompt(
+    `Schedule ${isSup ? 'supervisor ' : ''}welcome email for ${p.name}.\n\nEnter date and time (YYYY-MM-DD HH:MM):`,
+    defaultDT.getFullYear() + '-' + String(defaultDT.getMonth()+1).padStart(2,'0') + '-' + String(defaultDT.getDate()).padStart(2,'0') + ' ' + String(defaultDT.getHours()).padStart(2,'0') + ':' + String(defaultDT.getMinutes()).padStart(2,'0')
+  );
+  if (!dtStr) return;
+
+  const parsed = new Date(dtStr.replace(' ', 'T'));
+  if (isNaN(parsed.getTime())) { toast('Invalid date/time format', 'err'); return; }
+  if (parsed <= new Date()) { toast('Scheduled time must be in the future', 'err'); return; }
+
+  let supervisorPin = null;
+  if (isSup) {
+    supervisorPin = prompt('Enter the supervisor PIN for ' + (group?.name || 'the group') + ':');
+    if (!supervisorPin || supervisorPin.length !== 4) { toast('A valid 4-digit PIN is required for supervisor welcome', 'err'); return; }
+  }
+
+  try {
+    const data = {
+      type: isSup ? 'supervisorWelcome' : 'welcome',
+      participantId: p.id,
+      groupId: p.groupId || null,
+      scheduledAt: firebase.firestore.Timestamp.fromDate(parsed),
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: adminAuthed ? 'admin' : 'supervisor',
+    };
+    if (supervisorPin) data.supervisorPin = supervisorPin;
+    await db.collection('scheduledEmails').add(data);
+    toast(`Email scheduled for ${parsed.toLocaleDateString('en-GB')} ${parsed.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'})}`);
+  } catch(e) { toast('Error scheduling email', 'err'); console.error(e); }
+}
+
+async function cancelScheduledEmail(id) {
+  if (!confirm('Cancel this scheduled email?')) return;
+  try {
+    await db.collection('scheduledEmails').doc(id).update({ status: 'cancelled' });
+    toast('Scheduled email cancelled');
+  } catch(e) { toast('Error cancelling', 'err'); }
+}
+
+// Hook into admin listeners to start scheduled emails listener
+const _origStartAdminListeners2 = startAdminListeners;
+startAdminListeners = function() {
+  _origStartAdminListeners2();
+  startScheduledEmailsListener();
+};
+
+const _origStopAdminListeners = typeof stopAdminListeners === 'function' ? stopAdminListeners : null;
+if (_origStopAdminListeners) {
+  const _origStop = stopAdminListeners;
+  stopAdminListeners = function() { _origStop(); stopScheduledEmailsListener(); };
 }
 </script>
 </body>

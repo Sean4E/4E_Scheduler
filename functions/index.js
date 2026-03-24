@@ -1011,3 +1011,224 @@ exports.disconnectCalendar = onRequest({ region: REGION }, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ══════════════════════════════════════════════════════
+//  SEND SUPERVISOR WELCOME EMAIL (Gmail API)
+// ══════════════════════════════════════════════════════
+exports.sendSupervisorWelcome = onRequest({ region: REGION }, async (req, res) => {
+  if (!handleCors(req, res)) return;
+  const { participantId, participantName, participantEmail, groupName, supervisorPin } = req.body;
+
+  if (!participantEmail) { res.status(400).json({ error: "No email provided" }); return; }
+  if (!supervisorPin) { res.status(400).json({ error: "No supervisor PIN provided" }); return; }
+
+  try {
+    const authDoc = await db.collection("config").doc("googleAuth").get();
+    if (!authDoc.exists || !authDoc.data().refreshToken) {
+      res.status(400).json({ error: "Google Calendar not connected" }); return;
+    }
+
+    const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+    oauth2.setCredentials({ refresh_token: authDoc.data().refreshToken });
+    const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+    const logoUrl = "https://sean4e.github.io/4E_Scheduler/logo_WHT.png";
+    const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
+  <div style="background:linear-gradient(135deg,#7c3aed,#fbbf24);padding:24px 32px;display:flex;align-items:center;gap:16px">
+    <img src="${logoUrl}" alt="4E" style="height:40px;width:auto" />
+    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">Welcome to 4E Workshops</h1>
+  </div>
+  <div style="padding:24px 32px">
+    <p style="font-size:16px;margin:0 0 8px">Hi <strong>${participantName}</strong>,</p>
+    <p style="color:#9d98be;margin:0 0 24px">You've been assigned as <strong style="color:#fbbf24">Supervisor</strong> for <strong>${groupName || "your group"}</strong>.</p>
+    <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:10px;padding:20px;margin-bottom:20px;text-align:center">
+      <div style="font-size:12px;color:#fbbf24;margin-bottom:8px;letter-spacing:2px">YOUR SUPERVISOR PIN</div>
+      <div style="font-family:monospace;font-size:28px;letter-spacing:4px;font-weight:bold;margin-bottom:12px;color:#fbbf24">${supervisorPin}</div>
+      <a href="https://sean4e.github.io/4E_Scheduler/" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#fbbf24);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">Open Scheduler</a>
+    </div>
+    <p style="color:#9d98be;font-size:13px;margin-bottom:12px">As supervisor, you can:</p>
+    <ul style="color:#9d98be;font-size:13px;line-height:1.8;padding-left:20px;margin-bottom:20px">
+      <li>View and manage participants in your group</li>
+      <li>Assign sessions to participants</li>
+      <li>Track attendance and completion</li>
+      <li>Send welcome messages to your participants</li>
+    </ul>
+    <p style="color:#9d98be;font-size:12px;margin-bottom:16px">Use your PIN on the Supervisor login screen to access your dashboard.</p>
+    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design &middot; Workshop Scheduler</p>
+  </div>
+</div>`;
+
+    const subjectText = "Supervisor Access — " + (groupName || "4E Workshops");
+    const encodedSubject = "=?UTF-8?B?" + Buffer.from(subjectText).toString("base64") + "?=";
+
+    const rawEmail = [
+      `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
+      `To: ${participantName} <${participantEmail}>`,
+      `Subject: ${encodedSubject}`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/html; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from(htmlBody).toString("base64"),
+    ].join("\r\n");
+
+    const encoded = Buffer.from(rawEmail).toString("base64url");
+
+    await gmail.users.messages.send({ userId: "me", requestBody: { raw: encoded } });
+    console.log("Supervisor welcome sent to", participantEmail);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Supervisor welcome error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════
+//  PROCESS SCHEDULED EMAILS
+//  Called by Cloud Scheduler or manually — checks
+//  scheduledEmails collection for pending items
+// ══════════════════════════════════════════════════════
+exports.processScheduledEmails = onRequest({ region: REGION }, async (req, res) => {
+  if (!handleCors(req, res)) return;
+
+  try {
+    const now = admin.firestore.Timestamp.now();
+    const snap = await db.collection("scheduledEmails")
+      .where("status", "==", "pending")
+      .where("scheduledAt", "<=", now)
+      .get();
+
+    if (snap.empty) {
+      res.json({ processed: 0, message: "No pending scheduled emails" });
+      return;
+    }
+
+    const authDoc = await db.collection("config").doc("googleAuth").get();
+    if (!authDoc.exists || !authDoc.data().refreshToken) {
+      res.status(400).json({ error: "Google Calendar not connected" });
+      return;
+    }
+
+    let processed = 0;
+    const errors = [];
+
+    for (const doc of snap.docs) {
+      const se = doc.data();
+      try {
+        if (se.type === "supervisorWelcome") {
+          // Look up participant
+          const pDoc = await db.collection("participants").doc(se.participantId).get();
+          if (!pDoc.exists) { await doc.ref.update({ status: "cancelled", error: "Participant not found" }); continue; }
+          const p = pDoc.data();
+          const gDoc = se.groupId ? await db.collection("groups").doc(se.groupId).get() : null;
+          const groupName = gDoc && gDoc.exists ? gDoc.data().name : "";
+
+          // Call the supervisor welcome function logic inline
+          const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+          oauth2.setCredentials({ refresh_token: authDoc.data().refreshToken });
+          const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+          const logoUrl = "https://sean4e.github.io/4E_Scheduler/logo_WHT.png";
+          const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
+  <div style="background:linear-gradient(135deg,#7c3aed,#fbbf24);padding:24px 32px;display:flex;align-items:center;gap:16px">
+    <img src="${logoUrl}" alt="4E" style="height:40px;width:auto" />
+    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">Welcome to 4E Workshops</h1>
+  </div>
+  <div style="padding:24px 32px">
+    <p style="font-size:16px;margin:0 0 8px">Hi <strong>${p.name}</strong>,</p>
+    <p style="color:#9d98be;margin:0 0 24px">You've been assigned as <strong style="color:#fbbf24">Supervisor</strong> for <strong>${groupName || "your group"}</strong>.</p>
+    <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);border-radius:10px;padding:20px;margin-bottom:20px;text-align:center">
+      <div style="font-size:12px;color:#fbbf24;margin-bottom:8px;letter-spacing:2px">YOUR SUPERVISOR PIN</div>
+      <div style="font-family:monospace;font-size:28px;letter-spacing:4px;font-weight:bold;margin-bottom:12px;color:#fbbf24">${se.supervisorPin || "N/A"}</div>
+      <a href="https://sean4e.github.io/4E_Scheduler/" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#fbbf24);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">Open Scheduler</a>
+    </div>
+    <p style="color:#9d98be;font-size:13px;margin-bottom:12px">As supervisor, you can:</p>
+    <ul style="color:#9d98be;font-size:13px;line-height:1.8;padding-left:20px;margin-bottom:20px">
+      <li>View and manage participants in your group</li>
+      <li>Assign sessions to participants</li>
+      <li>Track attendance and completion</li>
+      <li>Send welcome messages to your participants</li>
+    </ul>
+    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design &middot; Workshop Scheduler</p>
+  </div>
+</div>`;
+
+          const subjectText = "Supervisor Access — " + (groupName || "4E Workshops");
+          const rawEmail = [
+            `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
+            `To: ${p.name} <${p.email}>`,
+            `Subject: =?UTF-8?B?${Buffer.from(subjectText).toString("base64")}?=`,
+            "MIME-Version: 1.0",
+            "Content-Type: text/html; charset=UTF-8",
+            "Content-Transfer-Encoding: base64",
+            "",
+            Buffer.from(htmlBody).toString("base64"),
+          ].join("\r\n");
+
+          const encoded = Buffer.from(rawEmail).toString("base64url");
+          await gmail.users.messages.send({ userId: "me", requestBody: { raw: encoded } });
+
+        } else {
+          // Regular welcome email
+          const pDoc = await db.collection("participants").doc(se.participantId).get();
+          if (!pDoc.exists) { await doc.ref.update({ status: "cancelled", error: "Participant not found" }); continue; }
+          const p = pDoc.data();
+          const gDoc = se.groupId ? await db.collection("groups").doc(se.groupId).get() : null;
+          const group = gDoc && gDoc.exists ? gDoc.data() : null;
+          const code = se.participantId;
+
+          const oauth2 = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+          oauth2.setCredentials({ refresh_token: authDoc.data().refreshToken });
+          const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+          const logoUrl = "https://sean4e.github.io/4E_Scheduler/logo_WHT.png";
+          const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#1a1a2e;color:#f0eeff;border-radius:12px;overflow:hidden">
+  <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 32px;display:flex;align-items:center;gap:16px">
+    <img src="${logoUrl}" alt="4E" style="height:40px;width:auto" />
+    <h1 style="margin:0;font-size:22px;color:#fff;padding-left:12px">Welcome to 4E Workshops</h1>
+  </div>
+  <div style="padding:24px 32px">
+    <p style="font-size:16px;margin:0 0 8px">Hi <strong>${p.name}</strong>,</p>
+    <p style="color:#9d98be;margin:0 0 24px">You've been added to the 4E Workshop Scheduler${group ? " as part of <strong>" + group.name + "</strong>" : ""}.</p>
+    <div style="background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.2);border-radius:10px;padding:20px;margin-bottom:20px;text-align:center">
+      <div style="font-size:12px;color:#22d3ee;margin-bottom:8px;letter-spacing:2px">YOUR ACCESS CODE</div>
+      <div style="font-family:monospace;font-size:28px;letter-spacing:5px;font-weight:bold;margin-bottom:12px">${code}</div>
+      <a href="https://sean4e.github.io/4E_Scheduler/" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#22d3ee);color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px">Open Scheduler</a>
+    </div>
+    ${group && group.allowSelfService ? '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">You can use your code to view and manage your bookings.</p>' : '<p style="color:#9d98be;font-size:13px;margin-bottom:16px">Your sessions will be scheduled for you.</p>'}
+    <p style="color:#4a4868;font-size:11px;margin-top:24px">4E Virtual Design &middot; Workshop Scheduler</p>
+  </div>
+</div>`;
+
+          const subjectText = "Welcome to 4E Workshops";
+          const rawEmail = [
+            `From: 4E Workshops <${GOOGLE_CALENDAR_ID}>`,
+            `To: ${p.name} <${p.email}>`,
+            `Subject: =?UTF-8?B?${Buffer.from(subjectText).toString("base64")}?=`,
+            "MIME-Version: 1.0",
+            "Content-Type: text/html; charset=UTF-8",
+            "Content-Transfer-Encoding: base64",
+            "",
+            Buffer.from(htmlBody).toString("base64"),
+          ].join("\r\n");
+
+          const encoded = Buffer.from(rawEmail).toString("base64url");
+          await gmail.users.messages.send({ userId: "me", requestBody: { raw: encoded } });
+        }
+
+        await doc.ref.update({ status: "sent", sentAt: admin.firestore.FieldValue.serverTimestamp() });
+        processed++;
+        console.log("Scheduled email sent:", doc.id, se.type);
+      } catch (emailErr) {
+        console.error("Scheduled email error:", doc.id, emailErr.message);
+        errors.push({ id: doc.id, error: emailErr.message });
+        await doc.ref.update({ status: "sent", sentAt: admin.firestore.FieldValue.serverTimestamp(), error: emailErr.message });
+      }
+    }
+
+    res.json({ processed, total: snap.size, errors: errors.length ? errors : undefined });
+  } catch (err) {
+    console.error("processScheduledEmails error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
